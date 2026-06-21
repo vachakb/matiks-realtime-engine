@@ -58,6 +58,12 @@
     <p style="margin:0"><b>Would I build it?</b> Phase 0 (the cheap wins) — immediately. The native engine — yes, but <i>after</i> Phase 0 proves the duel still bottlenecks, and scoped to the duel screen only.</p>
   </div>
 
+  <div class="card" style="border-left:5px solid var(--accent)">
+    <h3 style="margin:0 0 8px">Update — native ground truth (shipped APK + a 2nd Perfetto trace)</h3>
+    <p style="margin:0 0 6px"><b>Biggest de-risk:</b> Matiks <b>already ships Nitro Modules in production</b> (<code>NitroModules</code> + Mmkv/AppState/Keyboard/StrokeText) on Hermes + the New Architecture. So this engine isn't a new framework to adopt — it's <i>another module in the toolchain they already run.</i> That largely removes the "native maintenance burden" objection.</p>
+    <p style="margin:0"><b>And the freeze is worse than the web number implied:</b> on the real 32-bit Galaxy A13 (a top-selling India budget phone) the match-start region showed a <b>2.48 s frozen frame</b>, JS-thread busy runs up to <b>2.8 s</b>, <b>97% janky frames</b>, GPU idle — i.e. the ~3.5 s synchronized-start window does <i>not</i> hide it on real hardware.</p>
+  </div>
+
   <h2><span class="n">01</span>The claims, graded honestly</h2>
   <div class="card scroll">
     <table>
