@@ -15,6 +15,7 @@ Two user-facing defects hit during testing. **Both are Matiks app-layer bugs** (
 
 ## BUG-2 — Null-safety crashes ("Cannot read properties of undefined")
 **Severity:** High (full error screen; hit on daily-puzzle exit and on profile).
+**Status:** Intermittent — not reproducible on demand (a race/empty-state bug). The verdict below stands on the captured evidence; if it recurs, use the DevTools repro to name the exact field.
 **Evidence:** zero non-2xx, zero GraphQL errors all session → a pure client-side `TypeError` (missing null guard). The fresh-profile (empty/new-user state) likely exposed an unguarded initial-state path → **real new users can hit it**. **Zero Sentry beacons** were captured for the crashes → Matiks may be unaware.
 **Repro to capture the EXACT field (the smoking gun for the founder):**
 1. matiks.com Chrome → DevTools → **Sources** → enable **"Pause on uncaught exceptions"** (tick "caught" too).
