@@ -124,6 +124,7 @@ static void decryptBlock(const Ctx& c, uint8_t s[16]){
 }
 // CBC decrypt in place; returns plaintext length after stripping PKCS7
 static size_t cbcDecrypt(const Ctx& c, const uint8_t iv[16], uint8_t* buf, size_t len){
+  if(len==0 || (len & 15)) return 0;   // reject empty / non-16-aligned ciphertext (no OOB read)
   uint8_t prev[16]; memcpy(prev,iv,16);
   for(size_t off=0; off<len; off+=16){
     uint8_t cipher[16]; memcpy(cipher,buf+off,16);
@@ -164,6 +165,7 @@ static bool selfTest(){
 // A "question blob" mirrors Matiks: "<hexIV>:<hexCiphertext>" (AES-256-CBC, PKCS7).
 struct Blob { std::string ivHex, ctHex; };
 
+#ifndef MATIKS_TEST_BUILD
 int main(){
   printf("=== MatiksRealtime native core — decrypt bench ===\n");
   printf("AES-256 FIPS-197 self-test: %s\n", selfTest() ? "PASS ✓" : "FAIL ✗");
@@ -221,3 +223,4 @@ int main(){
   printf("CallInvoker — so on Hermes the ~2.5s JS-thread freeze becomes ~0 on the JS thread.\n");
   return 0;
 }
+#endif
