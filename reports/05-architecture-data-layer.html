@@ -1,0 +1,110 @@
+<title>Matiks System Map & Data-Layer Backlog</title>
+<style>
+  :root{--ink:#0f1222;--muted:#5b6178;--line:#e7e9f0;--bg:#f7f8fc;--card:#fff;--accent:#4f46e5;--bad:#e11d48;--warn:#f59e0b;--good:#10b981;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:15.5px}
+  .wrap{max-width:940px;margin:0 auto;padding:0 20px 80px}
+  header{background:linear-gradient(135deg,#0b1220,#15324a 65%,#0e7490);color:#fff;padding:48px 0 40px}
+  header .wrap{padding-bottom:0}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7dd3fc;margin:0 0 12px}
+  h1{font-size:33px;line-height:1.12;margin:0 0 12px;letter-spacing:-.02em}
+  .sub{font-size:17px;color:#cbd5e1;max-width:720px;margin:0}
+  h2{font-size:20px;margin:38px 0 6px}
+  h2 .n{font-family:var(--mono);color:var(--accent);font-size:13px;margin-right:9px}
+  .lede{color:var(--muted);margin:0 0 12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0;box-shadow:0 1px 2px rgba(16,20,48,.04)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .v{font-family:var(--mono);font-size:26px;font-weight:600}
+  .stat .v.bad{color:var(--bad)}
+  .stat .l{color:var(--muted);font-size:13px;margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid;white-space:nowrap}
+  .h{color:var(--bad);border-color:#fbcfe0;background:#fff1f5}.m{color:#b45309;border-color:#fde68a;background:#fffbeb}.l{color:#475569;border-color:#cbd5e1;background:#f1f5f9}
+  code{font-family:var(--mono);font-size:.9em;background:#eef0f7;padding:1px 5px;border-radius:5px}
+  pre{background:#0f1222;color:#e2e8f0;border-radius:10px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  .pre-wrap{overflow-x:auto}
+  .scroll{overflow-x:auto}
+  ul{margin:6px 0 0;padding-left:20px}li{margin:4px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:680px){.two{grid-template-columns:1fr}h1{font-size:27px}}
+  .foot{color:var(--muted);font-size:13px;margin-top:36px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+<header><div class="wrap">
+  <p class="kicker">System reconstructed from captured traffic · 3 sessions · 489 requests</p>
+  <h1>Matiks from the inside — and where the data layer bleeds.</h1>
+  <p class="sub">A map of their GraphQL + WebSocket backend, the full feature surface, and a ranked, evidence-backed list of fetch-layer wins that need no native code.</p>
+</div></header>
+
+<div class="wrap">
+  <h2><span class="n">01</span>The shape of the system</h2>
+  <div class="pre-wrap"><pre>  Expo / React-Native-Web client (web + iOS + Android, one codebase)
+        │
+        ├── GraphQL gateway   POST server.matiks.org/api   (66 ops · ONE op per request · never batched)
+        ├── Realtime          wss://server.matiks.org/ws   (1 socket · {type,channel,data} · multiplexed channels)
+        ├── CDN               cdn.matiks.org               (Rive .riv, assets)
+        └── Analytics fan-out Amplitude · Mixpanel · WebEngage · GA · Ahrefs · sakshi.matiks.org
+                              (~405 beacons/session ≈ 1:1 with GraphQL calls)</pre></div>
+
+  <h2><span class="n">02</span>The numbers that should worry a founder</h2>
+  <div class="grid">
+    <div class="stat"><div class="v bad">~37</div><div class="l">GraphQL round-trips in the first 1.4 s of launch — unbatched</div></div>
+    <div class="stat"><div class="v bad">0</div><div class="l"><code>cache-control</code> headers across all 355 responses</div></div>
+    <div class="stat"><div class="v bad">~900 KB</div><div class="l">duplicate encrypted-question payload per session (51 KB × 3/duel × 6)</div></div>
+    <div class="stat"><div class="v bad">1 : 1</div><div class="l">analytics beacons to API calls (405 vs 355)</div></div>
+    <div class="stat"><div class="v">17×</div><div class="l"><code>GetCurrentUser</code> re-fetched (already in <code>GoogleLogin</code>)</div></div>
+    <div class="stat"><div class="v">1 s</div><div class="l">ping-pong heartbeat; server-delta median 168 ms</div></div>
+  </div>
+
+  <h2><span class="n">03</span>Data-layer backlog — ranked, no native code required</h2>
+  <div class="card scroll"><table>
+    <tr><th>#</th><th>Fix</th><th>Evidence</th><th>Effort/Impact</th></tr>
+    <tr><td>1</td><td><b>Batch the launch fan-out</b> (Apollo batch link or a <code>getHomeScreen</code> aggregate)</td><td>~37 POSTs in 1.4 s, batch count 0/489</td><td><span class="tag h">M · HIGH</span></td></tr>
+    <tr><td>2</td><td><b>Add cache-control + client dedup</b></td><td>0 cache headers; <code>GetFeaturedUnifiedContests</code> byte-identical 15×; ~228 KB home re-fetch/session</td><td><span class="tag m">S-M · HIGH</span></td></tr>
+    <tr><td>3</td><td><b>Stop the triple question-fetch</b> — use the socket's copy</td><td>51 KB blob in UserMatched + JoinGameV2 + GetGameByIdV2×2 = ~900 KB/session</td><td><span class="tag m">S · HIGH</span></td></tr>
+    <tr><td>4</td><td><b>Don't re-fetch home on every nav return</b> (TTL cache / socket deltas)</td><td><code>OnlineUsers</code> 15×, league board 14×@3.8 KB, <code>GetUserTodayQuest</code> 21×</td><td><span class="tag m">M · MED-HIGH</span></td></tr>
+    <tr><td>5</td><td><b>Drop redundant <code>GetUsers</code> + <code>GetCurrentUser</code></b></td><td>opponent already in <code>UserMatchedEvent</code>; identity already in <code>GoogleLogin</code></td><td><span class="tag l">S · MED</span></td></tr>
+    <tr><td>6</td><td><b>Persisted queries (APQ)</b></td><td>multi-KB query strings shipped on every one of ~422 POSTs/session</td><td><span class="tag m">M · MED</span></td></tr>
+    <tr><td>7</td><td><b>Parallelize the head-of-line chain</b></td><td><code>Moderation→UserScene</code> serialized ~740 ms before the burst</td><td><span class="tag l">S · MED</span></td></tr>
+    <tr><td>8</td><td><b>Lazy-load eager heavy widgets</b></td><td><code>GetFriendRecommendation</code> 16 KB &amp; <code>GetUserContestAttemptStats</code> 57 KB at launch</td><td><span class="tag l">S · MED</span></td></tr>
+  </table></div>
+
+  <h2><span class="n">04</span>The duel, frame by frame</h2>
+  <div class="pre-wrap"><pre> +0     WS  subscribe USER_EVENT          ping-pong every ~1000ms (continuous)
+ +1.5s  GQL SearchOpponent {gameConfig} → true
+ +1.4s  WS  UserMatchedEvent  ★ 53 KB   {game{encryptedQuestions[75], startTime}, opponent{full profile, isBot}}
+ +1.6s  GQL AbortSearching                (fires on every match, not just cancels)
+ +2.1s  GQL GetGameByIdV2  51 KB          (encryptedQuestions again)
+ +2.6s  GQL GetUsers [me,opp]             (opponent already in UserMatched ↑)
+ +2.8s  WS  subscribe GAME_EVENT_<id>_V2
+ +2.9s  GQL JoinGameV2  51 KB             (encryptedQuestions a THIRD time)  ── startTime ≈ +3.5s from here
+ ~+9s   WS  GAME_EVENT "started"
+        WS  registerTap → submitAnswerV2 (293 b)  +  GQL SubmitGameQuestionActions (telemetry)  ×~12
+ +66s   WS  GAME_EVENT "GAME_ENDED"       {leaderBoard, ratingChange, statikCoinsEarned, xpBoosterInfo}
+        GQL ×7 results queries  +  GROUP_CHAT subscribe</pre></div>
+  <p class="lede" style="margin:6px 0 0">Each answer is a <b>dual write</b>: <code>submitAnswerV2</code> over WS + <code>SubmitGameQuestionActions</code> over GraphQL (keystroke/cursor telemetry). Questions arrive encrypted upfront (anti-read-ahead). <code>betInfo</code> = coin staking on duels.</p>
+
+  <h2><span class="n">05</span>Feature surface &amp; data model (mapped from payloads)</h2>
+  <div class="two">
+    <div class="card"><b>Categories &amp; modes</b><ul>
+      <li>BLITZ · PUZZLE · MEMORY · CLASSICAL</li>
+      <li>Types: DMAS, MATH_MAZE_PUZZLE, FLASH_ANZAN</li>
+      <li>Modes: ONLINE_SEARCH/CHALLENGE, PRACTICE, GROUP_PLAY, SURVIVAL_SATURDAY, SUMDAY_SHOWDOWN, ASYNC_CHALLENGE</li>
+      <li>Matchmaking falls back to <b>bots</b> (<code>isBot:true</code>)</li>
+    </ul></div>
+    <div class="card"><b>Economy &amp; retention systems</b><ul>
+      <li>Coin staking on duels (<code>betInfo</code>), <code>statikCoins</code>, <code>pies</code>, XP boosters</li>
+      <li>Weekly leagues; unified contests + clubs (entry costs, reg forms)</li>
+      <li>Streaks + shields/freezers + <b>buddy co-op streaks</b>; quests; daily challenges + daily puzzle</li>
+      <li>Per-discipline ratings (Flash Anzan / Ability / Puzzle / Global), badges, referrals, chat, feed</li>
+    </ul></div>
+  </div>
+
+  <h2><span class="n">06</span>Two complementary tracks</h2>
+  <div class="card">
+    <p style="margin:0 0 8px"><b>Track A — the real-time engine</b> (off-thread + prediction + clock-sync): fixes the duel itself — JS-thread saturation, match-start freeze, server-authoritative anti-cheat. Bigger build, strategic.</p>
+    <p style="margin:0"><b>Track B — the data layer</b> (this page): batch + cache + dedup + persisted queries. Fixes cold-start &amp; bandwidth. <b>No native code, mostly Apollo-config + server</b> — cheaper, lower-risk, shippable fast. A founder would likely greenlight Track B first.</p>
+  </div>
+  <p class="foot">Reconstructed from 3 capture sessions (956 s primary), 489 requests, 1786 WS frames. Caveats: home re-fetch is navigation-triggered (cache-on-nav, not "lower poll interval"); <code>betInfo</code> staking schema confirmed but not exercised in this guest session.</p>
+</div>

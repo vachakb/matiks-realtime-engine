@@ -1,0 +1,160 @@
+<title>Matiks Performance Teardown</title>
+<style>
+  :root{
+    --ink:#0f1222; --muted:#5b6178; --line:#e7e9f0; --bg:#f7f8fc; --card:#fff;
+    --accent:#4f46e5; --accent2:#0ea5e9; --bad:#e11d48; --warn:#f59e0b; --good:#10b981;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:16px}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px 80px}
+  header{background:linear-gradient(135deg,#101430,#1e2566 60%,#3730a3);color:#fff;padding:54px 0 46px;margin-bottom:8px}
+  header .wrap{padding-bottom:0}
+  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4fc;margin:0 0 12px}
+  h1{font-size:38px;line-height:1.1;margin:0 0 14px;letter-spacing:-.02em}
+  .sub{font-size:18px;color:#c7d2fe;max-width:680px;margin:0}
+  h2{font-size:22px;margin:44px 0 6px;letter-spacing:-.01em}
+  h2 .n{font-family:var(--mono);color:var(--accent);font-size:14px;margin-right:10px}
+  .lede{color:var(--muted);margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:16px 0;box-shadow:0 1px 2px rgba(16,20,48,.04)}
+  .thesis{border-left:4px solid var(--accent);background:#fff}
+  .thesis b{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:16px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stat .v{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em}
+  .stat .v.bad{color:var(--bad)} .stat .v.good{color:var(--good)} .stat .v.warn{color:var(--warn)}
+  .stat .l{color:var(--muted);font-size:13.5px;margin-top:4px}
+  .bar{display:flex;align-items:center;gap:12px;margin:9px 0;font-size:14px}
+  .bar .name{flex:0 0 168px;font-family:var(--mono);font-size:13px}
+  .bar .track{flex:1;background:#eef0f7;border-radius:7px;height:22px;position:relative;overflow:hidden}
+  .bar .fill{height:100%;border-radius:7px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .bar .fill.red{background:linear-gradient(90deg,#e11d48,#fb7185)}
+  .bar .fill.green{background:linear-gradient(90deg,#10b981,#34d399)}
+  .bar .pct{flex:0 0 96px;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  td.num{font-family:var(--mono);white-space:nowrap}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid}
+  .tag.bad{color:var(--bad);border-color:#fbcfe0;background:#fff1f5}
+  .tag.warn{color:#b45309;border-color:#fde68a;background:#fffbeb}
+  .tag.good{color:#047857;border-color:#a7f3d0;background:#ecfdf5}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){.two{grid-template-columns:1fr}.bar .name{flex-basis:120px}h1{font-size:30px}}
+  .pill{font-family:var(--mono);font-size:12px;color:var(--accent);background:#eef0ff;border:1px solid #dfe3ff;padding:2px 9px;border-radius:999px}
+  .foot{color:var(--muted);font-size:13px;margin-top:40px;border-top:1px solid var(--line);padding-top:18px}
+  code{font-family:var(--mono);font-size:.92em;background:#eef0f7;padding:1px 5px;border-radius:5px}
+  ul{margin:8px 0 0;padding-left:20px} li{margin:5px 0}
+  .scroll{overflow-x:auto}
+</style>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">Performance Teardown · June 2026 · measured on production</p>
+    <h1>Matiks is bleeding on one thread.</h1>
+    <p class="sub">A six-instrument audit of the live Matiks app &amp; site — real numbers from a real Blitz/DMAS duel, on a real low-end Android (Exynos 850, ≈ the core India device).</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="card thesis">
+    <p style="margin:0">The GPU is idle. The renderer is fine. <b>The JavaScript thread (<code>mqt_v_js</code>) is the single busiest thread in the whole app — 39.7% on-CPU — and the app misses its frame deadline on 57% of frames, janking 90% of them, with stalls up to 2.8 seconds.</b> This is not a graphics problem; it is a <b>"too much work on one JS thread"</b> problem. Every fix below moves work <i>off</i> that thread.</p>
+  </div>
+
+  <h2><span class="n">01</span>The headline numbers</h2>
+  <div class="grid">
+    <div class="stat"><div class="v bad">39.7%</div><div class="l">JS thread on-CPU — busiest thread in the app (60s of 152s)</div></div>
+    <div class="stat"><div class="v bad">90%</div><div class="l">frames janky (Android FrameTimeline); 57% are "App Deadline Missed"</div></div>
+    <div class="stat"><div class="v bad">270 ms</div><div class="l">felt latency per answer (submit → game-state echo, p50)</div></div>
+    <div class="stat"><div class="v bad">2.8 s</div><div class="l">worst single frame; match start = a ~0.65s decrypt freeze</div></div>
+    <div class="stat"><div class="v warn">100%</div><div class="l">WebSocket frames are JSON text — zero binary</div></div>
+    <div class="stat"><div class="v good">3.5%</div><div class="l">GPU usage — proof this is CPU/JS-bound, not graphics</div></div>
+  </div>
+
+  <h2><span class="n">02</span>The smoking gun — where the CPU actually goes</h2>
+  <p class="lede">Per-thread on-CPU time for <code>com.matiks.app</code> over a 152s session (Perfetto, kernel scheduler).</p>
+  <div class="card">
+    <div class="bar"><span class="name">mqt_v_js (JS)</span><span class="track"><span class="fill red" style="width:39.7%"></span></span><span class="pct">39.7%</span></div>
+    <div class="bar"><span class="name">UI / main thread</span><span class="track"><span class="fill red" style="width:29.7%"></span></span><span class="pct">29.7%</span></div>
+    <div class="bar"><span class="name">RenderThread</span><span class="track"><span class="fill" style="width:22.3%"></span></span><span class="pct">22.3%</span></div>
+    <div class="bar"><span class="name">HeapTaskDaemon (GC)</span><span class="track"><span class="fill" style="width:4.3%"></span></span><span class="pct">4.3%</span></div>
+    <div class="bar"><span class="name">mali GPU</span><span class="track"><span class="fill green" style="width:3.5%"></span></span><span class="pct">3.5%</span></div>
+    <p class="lede" style="margin:14px 0 0">A healthy RN app's JS thread idles in the low single digits except during interaction. At <b>40% sustained on a low-end device, the JS thread can't keep up with frame production</b> — so the app misses deadlines and the GPU starves.</p>
+  </div>
+
+  <h2><span class="n">03</span>What's *on* that thread — the root causes</h2>
+  <p class="lede">Confirmed by tracing the web build (self-time) and reading the production bundles.</p>
+  <div class="card scroll">
+    <table>
+      <tr><th>Root cause</th><th>Evidence</th><th>Cost</th></tr>
+      <tr><td><b>Questions decrypted on the JS thread at match start</b></td><td><code>AES-256-CBC (crypto-js)</code> + <code>JSON.parse</code> over the whole question array, synchronously</td><td class="num">652 ms freeze<br><span class="tag bad">match start</span></td></tr>
+      <tr><td><b>Every WebSocket frame JSON-parsed/stringified on the JS thread</b></td><td>65% of main-thread time is scripting; 27% pure promise/microtask churn</td><td class="num">sustained<br>JS load</td></tr>
+      <tr><td><b>JSON wire format, no binary</b></td><td>459/459 frames JSON; GAME_EVENT frames 57% compressible; up to 53 KB</td><td class="num">bytes + decode CPU</td></tr>
+      <tr><td><b>14.6 MB single JS chunk (86% of all JS)</b></td><td><code>__common</code> bundle not split; heavy Apollo + moment.js + crypto-js + Rive</td><td class="num">cold-start TTI</td></tr>
+      <tr><td><b>Game timing uses <code>Date.now()</code></b></td><td>non-monotonic wall clock feeds <code>timeTaken</code> → scoring; NTP/throttle can jump it</td><td class="num">fairness</td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--warn)">
+    <p style="margin:0"><b>Important nuance (verified, 7 matches):</b> the match-start decrypt sits inside a <b>deliberate ~3.5 s synchronized-start window</b> — the server sends an absolute <code>startTime</code> 3.0–3.9 s ahead, filled by a Rive "3…2…1" countdown. So the goal is <i>not</i> to start sooner. The problem is that a <b>blocking</b> decrypt (a) janks that countdown animation, and (b) on a low-end device can <b>overrun the 3.5 s window</b>, so question #1 renders after <code>startTime</code> and the slow player begins the timed match already behind — the exact inequity synchronized-start exists to prevent. The fix keeps the window and makes the prep non-blocking (off-thread/chunked) so it finishes in time <i>on every device</i>.</p>
+  </div>
+
+  <h2><span class="n">04</span>Credit where due — what Matiks already does well</h2>
+  <p class="lede">A teardown that only finds faults isn't trustworthy. These are genuinely solid, so the engine deliberately doesn't touch them.</p>
+  <div class="two">
+    <div class="card"><b>Mature WebSocket layer</b><ul>
+      <li>Exponential-backoff reconnect, app-state aware</li>
+      <li>Offline send-queue + channel re-join</li>
+      <li>Per-message <code>clientMessageId</code> + ack timeouts</li>
+      <li>Ping/pong heartbeat + network-quality tiers</li>
+    </ul></div>
+    <div class="card"><b>Disciplined React</b><ul>
+      <li><code>React.memo</code> ×864, <code>useMemo</code> ×827, <code>useCallback</code> ×1961</li>
+      <li>FlashList where it matters; <code>expo-image</code></li>
+      <li>Source maps stripped; console largely stripped</li>
+      <li>Reanimated + RNGH already adopted</li>
+    </ul></div>
+  </div>
+
+  <h2><span class="n">05</span>The fix — one engine, three capabilities</h2>
+  <p class="lede">A cross-platform real-time game-sync engine: <b>one shared core, two bodies</b> — a Nitro/JSI module on native (off the JS thread), the same core compiled to WASM-in-a-Web-Worker on web (off the main thread), behind one identical TypeScript API.</p>
+  <div class="card scroll">
+    <table>
+      <tr><th>Capability</th><th>Kills</th><th>Metric it moves</th></tr>
+      <tr><td><b>Off-thread transport + JSON + decrypt</b> (Nitro / Worker)</td><td>652 ms match-start freeze; JS-thread saturation</td><td class="num">JS thread ↓↓<br>fps → 60</td></tr>
+      <tr><td><b>Binary protocol</b> (MessagePack + FlatBuffers for GAME_EVENT)</td><td>fat JSON + parse CPU</td><td class="num">bytes −40–57%<br>decode → ~0</td></tr>
+      <tr><td><b>Client prediction + reconciliation + monotonic clock</b></td><td>270 ms felt latency; <code>Date.now()</code> unfairness; jitter</td><td class="num">latency → ~0<br>fair timing</td></tr>
+      <tr><td style="color:var(--muted)"><b>+ bonus:</b> server re-validates predicted state</td><td style="color:var(--muted)">client-authoritative scoring (the bot-cheating hole)</td><td class="num" style="color:var(--muted)">anti-cheat,<br>no latency cost</td></tr>
+    </table>
+    <p class="lede" style="margin:8px 0 0">Industry precedent: Valve Source multiplayer networking &amp; Gabriel Gambetta (prediction/reconciliation), GGPO rollback (Tony Cannon); Nitro Modules (margelo) for native; MessagePack/FlatBuffers for the wire. <b>A math duel is an <i>easier</i> netcode problem than an FPS</b> — answers are discrete and deterministic, so prediction is near-perfect and reconciliation almost never rolls back.</p>
+  </div>
+
+  <h2><span class="n">06</span>Is it Matiks — or your phone / network?</h2>
+  <p class="lede">The first question a skeptic asks. The trace answers it on its own (8-core device, 152 s, system-wide).</p>
+  <div class="card">
+    <div class="bar"><span class="name">idle CPU (unused)</span><span class="track"><span class="fill green" style="width:58%"></span></span><span class="pct">~58%</span></div>
+    <div class="bar"><span class="name">Matiks</span><span class="track"><span class="fill red" style="width:17%"></span></span><span class="pct">17%</span></div>
+    <div class="bar"><span class="name">all other apps</span><span class="track"><span class="fill" style="width:8%"></span></span><span class="pct">~8%</span></div>
+    <p class="lede" style="margin:14px 0 12px">The phone was <b>majority-idle</b> with cores pinned near max clock (1586 MHz — <b>not</b> throttled), and <b>no other app competed</b> (system_server 1.9%, WhatsApp 0.2%). Matiks was the dominant app by 8×.</p>
+    <ul style="margin:0">
+      <li><b>Not the device.</b> ~58% of the CPU sat idle at full clock — yet Matiks janked 90%, because its work is jammed on <b>one JS thread it can't spread across the idle cores.</b> Architecture limit, not hardware limit.</li>
+      <li><b>Not the network.</b> Network latency doesn't burn CPU; measured GraphQL was p50 1 ms / p95 56 ms (fast). The cost is decrypt + parse + render <i>after</i> bytes arrive.</li>
+      <li><b>Not a fluke.</b> The same root cause reproduces on the web build — different hardware, different network. A defect that crosses devices lives in the code.</li>
+    </ul>
+    <p class="lede" style="margin:12px 0 0"><b>The punchline:</b> the engine's job is to put those idle cores to work — moving transport, decode &amp; decrypt onto native threads / a Worker. The headroom is already on the device.</p>
+  </div>
+
+  <h2><span class="n">07</span>Method &amp; honesty</h2>
+  <div class="card">
+    <p style="margin:0 0 10px"><span class="pill">6 instruments</span> &nbsp;Playwright CDP WebSocket capture · Chrome DevTools Performance traces · <code>dumpsys gfxinfo</code> · Perfetto system trace (kernel sched + FrameTimeline) · static bundle audit (45 prod files) · binary-vs-JSON microbench on real frames.</p>
+    <ul style="margin:0">
+      <li><b>Caveats:</b> DevTools-trace absolute ms include profiler overhead (excluded where noted). The 90% jank figure includes "Buffer Stuffing"; the stricter "App Deadline Missed" (app's own fault) is 57%.</li>
+      <li><b>Native architecture</b> (Fabric/Hermes on/off) can't be confirmed from web bundles — inferred from Expo SDK 54 defaults.</li>
+      <li>All numbers are reproducible from captured artifacts (traces, JSONL, gfxinfo, perfetto trace).</li>
+    </ul>
+  </div>
+
+  <p class="foot">Prepared for the Matiks team · measured on app v1.22.111 · device: Samsung Exynos 850 · all figures from live production traffic and on-device traces.</p>
+</div>

@@ -1,0 +1,14 @@
+{
+  "name": "@matiks/realtime-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-platform real-time game-sync engine for Matiks — off-thread transport, binary protocol, client-side prediction + server reconciliation, and monotonic clock sync. One shared core, two bodies (Nitro/JSI on native, WASM-in-Worker on web).",
+  "engines": { "node": ">=23.6" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "bench": "node bench/run.ts"
+  },
+  "license": "UNLICENSED"
+}
