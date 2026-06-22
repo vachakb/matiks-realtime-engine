@@ -135,7 +135,7 @@ export class MockMatiksServer {
     this.broadcast();
   }
 
-  /** Advance the opponent + emit a clock-sync sample. Call on an interval (or per test tick). */
+  /** Advance the opponent and broadcast a snapshot. Call on an interval (or per test tick). */
   tick(): void {
     const t = this.now();
     if (this.oppIndex < this.questionCount && t - this.oppLastAnswerAt >= this.opponentIntervalMs) {
