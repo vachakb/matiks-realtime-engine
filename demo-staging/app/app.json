@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Off-Thread Decrypt",
+    "slug": "matiks-offthread-decrypt-demo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0b1020"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.klydo.matiks.offthreaddecryptdemo"
+    },
+    "android": {
+      "package": "in.klydo.matiks.offthreaddecryptdemo"
+    }
+  }
+}

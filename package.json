@@ -7,8 +7,7 @@
   "engines": { "node": ">=23.6" },
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit",
-    "bench": "node bench/run.ts"
+    "typecheck": "tsc --noEmit"
   },
   "license": "UNLICENSED"
 }

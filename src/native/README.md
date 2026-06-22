@@ -50,4 +50,4 @@ cd ios && pod install # iOS
 ## Follow-ups that compound the win
 - Move the **question AES-decrypt** here too (kills the 652 ms match-start freeze entirely).
 - **Certificate pinning** in C++ (BoringSSL) — far stronger than anything possible in JS.
-- Enable **permessage-deflate** at the socket (the bigger wire-size lever than msgpack — see bench).
+- Enable **permessage-deflate** at the socket (the bigger wire-size lever than msgpack).

@@ -23,7 +23,7 @@ Everything is counted (`metrics.bytesSaved`, calls networked vs deduped vs cache
 
 ## Proof — replay of real captured traffic
 
-`node bench/replay-launch.ts <capture.jsonl>` (capture path passed as an arg — never committed, it holds tokens/PII):
+Replaying a full real session capture through the data layer (the capture is kept private — it holds tokens/PII):
 
 ```
 Replayed 355 real GraphQL calls over 956s (MATIKS_QUERY_TTL_MS policy)

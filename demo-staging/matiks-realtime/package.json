@@ -1,0 +1,60 @@
+{
+  "name": "react-native-matiks-realtime",
+  "version": "0.1.0",
+  "description": "Off-thread AES-256-CBC question decryption for Matiks, as a React Native Nitro Module (C++).",
+  "main": "lib/index",
+  "module": "lib/index",
+  "types": "lib/index.d.ts",
+  "react-native": "src/index",
+  "source": "src/index",
+  "files": [
+    "src",
+    "react-native.config.js",
+    "lib",
+    "nitrogen",
+    "android/build.gradle",
+    "android/gradle.properties",
+    "android/fix-prefab.gradle",
+    "android/CMakeLists.txt",
+    "android/src",
+    "cpp",
+    "ios/**/*.h",
+    "ios/**/*.m",
+    "ios/**/*.mm",
+    "ios/**/*.cpp",
+    "ios/**/*.swift",
+    "nitro.json",
+    "*.podspec",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf android/build lib nitrogen/generated",
+    "typescript": "tsc",
+    "nitrogen": "tsc --noEmit false && nitrogen",
+    "specs": "tsc --noEmit false && nitrogen --logLevel=\"debug\""
+  },
+  "keywords": [
+    "react-native",
+    "nitro",
+    "nitro-modules",
+    "aes",
+    "decrypt",
+    "matiks"
+  ],
+  "license": "UNLICENSED",
+  "author": "Matiks Engineering",
+  "private": true,
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "*"
+  },
+  "devDependencies": {
+    "nitrogen": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "*",
+    "typescript": "^5.5.0"
+  }
+}

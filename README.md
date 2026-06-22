@@ -1,6 +1,6 @@
 # Matiks — a real-time duel engine + client data layer
 
-A cross-platform real-time engine, a client data layer, and a server-authoritative integrity model — built for Matiks' duel loop. Each piece targets a specific issue measured in the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture). Every number is reproducible from this repo.
+A cross-platform real-time engine, a client data layer, and a server-authoritative integrity model — built for Matiks' duel loop. Each piece targets a specific issue measured in the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture).
 
 ## Issues found
 
@@ -76,10 +76,8 @@ Felt latency holds at 0 ms on every network, with 0 rollbacks:
 
 ## Setup
 ```bash
-npm test                                      # 47 tests
-node bench/scenarios.ts                        # network / clock / integrity numbers
-node bench/replay-launch.ts <capture.jsonl>    # data-layer before/after on real traffic
-cd demo && npx expo run:android                # the playable demo, built + run on the A13
+npm test                          # 47 tests — prediction, reconciliation, clock, data layer, integrity
+cd demo && npx expo run:android   # the playable duel + off-thread-decrypt demo
 ```
 
 *Built by Vacha.*

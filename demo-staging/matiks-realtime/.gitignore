@@ -1,0 +1,7 @@
+node_modules/
+lib/
+android/build/
+android/.cxx/
+*.log
+
+# NOTE: nitrogen/generated/ is intentionally COMMITTED (it ships in the package).
