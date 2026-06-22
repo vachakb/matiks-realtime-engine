@@ -29,6 +29,8 @@ export interface ServerSnapshot {
   /** last input seq the server processed for us — the reconciliation anchor. */
   lastProcessedSeq: number;
   opponent?: { userId: string; score: number; questionIndex: number };
+  /** Server-authoritative integrity verdict (bot/anomaly detection). Absent = clean. */
+  integrity?: { flagged: boolean; reason?: string };
 }
 
 export interface EngineOptions {
@@ -67,6 +69,7 @@ export class RealtimeEngine {
   #flushScheduled = false;
   #outbox: WsFrame[] = [];
   #opponent: ServerSnapshot['opponent'];
+  #integrity: ServerSnapshot['integrity'];
   #stateListeners: StateListener[] = [];
   #m = { bytesSent: 0, framesSent: 0, bytesReceived: 0, framesReceived: 0 };
 
@@ -96,6 +99,8 @@ export class RealtimeEngine {
 
   get predicted(): DuelState { return this.#pred.predicted; }
   get opponent(): ServerSnapshot['opponent'] { return this.#opponent; }
+  /** Latest server integrity verdict — `{flagged:true,reason}` when the server caught a bot. */
+  get integrity(): ServerSnapshot['integrity'] { return this.#integrity; }
   get serverTime(): number { return this.#clock.serverNow(); }
   get metrics(): EngineMetrics {
     return {
@@ -177,6 +182,7 @@ export class RealtimeEngine {
       if (snap && snap.self) {
         const r = this.#pred.reconcile(snap.self, snap.lastProcessedSeq);
         if (snap.opponent) this.#opponent = snap.opponent;
+        this.#integrity = snap.integrity;
         this.#emit(r.state);
       }
     }
