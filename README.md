@@ -1,6 +1,6 @@
-# Matiks — performance & integrity audit + fix
+# Matiks — a real-time duel engine + client data layer
 
-Audit of the live Matiks app — profiled on a real budget Galaxy A13 with Perfetto thread/frame traces, Chrome DevTools traces, and a CDP network capture — with built and tested fixes for what was found. Every number is reproducible from this repo.
+A cross-platform real-time engine, a client data layer, and a server-authoritative integrity model — built for Matiks' duel loop. Each piece targets a specific issue measured in the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture). Every number is reproducible from this repo.
 
 ## Issues found
 
@@ -14,32 +14,33 @@ Audit of the live Matiks app — profiled on a real budget Galaxy A13 with Perfe
 - **Timed scoring uses `Date.now()`** — a wall-clock correction (NTP / background resume) can register an answer at negative elapsed time, corrupting a timed duel.
 
 **Bugs**
-- **Web crash — "Cannot read properties of null (reading 'uattr')"** — an intermittent full-page crash. Root-caused to the WebEngage SDK reading `getForever().uattr` on a null store; a non-critical analytics tracker takes down the whole app. (`reports/17`)
-- Two more reproducible client stability bugs documented in `reports/09` and `reports/11`.
+- **Duel aborts on match** — a freshly matched duel intermittently aborts the instant it should begin. The capture shows every search reached a game server-side with zero server errors — a client-side matchmaking race. (`reports/11`)
+- **Web crash — "Cannot read properties of null (reading 'uattr')"** — an intermittent full-page crash, root-caused to the WebEngage SDK reading `getForever().uattr` on a null store; a non-critical analytics tracker takes down the whole app. (`reports/17`)
 
-## The fix
+## What was built
 
-One shared TypeScript core, dropped onto each platform through a thin shim. It mirrors the existing `{type, channel, data}` WebSocket contract — the server is unchanged.
+One shared TypeScript core, with a thin shim on each platform. It speaks the existing `{type, channel, data}` WebSocket contract, so the server is unchanged. The native shim is a **TurboModule** — React Native's New Architecture (Fabric + TurboModules over JSI, the default since RN 0.74), which Matiks already ships — so it loads lazily and calls C++ directly, not over the old bridge.
 
 ```
                 shared core  (TypeScript, 47 tests)
    codec · monotonic clock-sync · prediction + reconciliation · duel reducer
          │                      │                         │
     DATA LAYER             NATIVE shim                WEB shim
-  dedup·cache·batch     Nitro/JSI, C++ thread     WebSocket in a Worker
+  dedup·cache·batch     TurboModule (C++/JSI)     WebSocket in a Worker
    (over Apollo)         (off the JS thread)       (off the main thread)
 
    AUTHORITATIVE SERVER MODEL — recomputes correctness · flags bots · voids cheats
 ```
 
-Each mechanism, and the issue it closes:
-- **Data layer** — `RequestGateway` (in-flight dedup + per-operation TTL cache, default never-cache so live data stays fresh) + `RequestBatcher` (coalesces same-tick queries into one request, like Apollo `BatchHttpLink`). → redundant network.
-- **Prediction + reconciliation** — answers apply optimistically and return synchronously; an authoritative server snapshot rebases state and replays still-unacked inputs. Rollbacks are ≈0 because answer correctness is deterministic (the bank is local). → laggy answers on slow networks; also lets scoring go server-authoritative with no felt latency.
-- **Monotonic clock** — NTP-style sync over the existing PING_PONG channel, anchored to `performance.now()`, never `Date.now()`. → timed-scoring corruption.
-- **Off-thread transport** — JSI/Nitro invokes C++ directly, without the legacy bridge's JSON-serialized message queue, so transport + crypto run off the JS thread. Web uses a Worker. → JS-thread contention.
-- **Authoritative server model** — recomputes correctness from its own answer key and flags superhuman answer cadence, voiding flagged scores. → client-authoritative scoring.
+What each piece does, in plain terms:
 
-The non-obvious result (and why the native module was built): JSI removes *serialization*, but marshaling the decrypted question payload into JS values is still synchronous JS-thread work. Measured on the A13, the decrypt itself is ~4 ms off-thread while the bridge crossing is ~685 ms — so the real match-start fix is **not** shipping + decrypting the whole bank on the client mid-countdown, rather than simply "make the decrypt native."
+- **Data layer — stop repeating network calls.** Dedupes identical in-flight requests, caches slow-changing queries on a per-query timer (live data is never cached), and merges calls fired in the same tick into one request (Apollo `BatchHttpLink`-style). → *redundant network.*
+- **Prediction — answers feel instant.** An answer shows on screen immediately, then the server confirms it. The bank is on the client, so the client already knows the right answer — the guess is essentially always correct and almost never has to be undone. → *laggy answers on slow networks.*
+- **Monotonic clock — fair timing.** Answer time comes from a steady, server-synced clock (over the existing PING_PONG channel), never `Date.now()`, so a clock jump can't corrupt scoring. → *timed-scoring corruption.*
+- **Off the JS thread — no rendering contention.** Transport + crypto run in the TurboModule (C++ via JSI; a Web Worker on web), off the one JS thread that also draws the UI. → *JS-thread jank.*
+- **Server-authoritative scoring — the client can't grade itself.** The server re-checks every answer against its own key and flags inhumanly fast (bot) cadence, voiding the score. → *client-authoritative scoring + cheating.*
+
+One result worth calling out: going native is not automatically the fix. JSI removes serialization, but copying the decrypted bank into JS values is still JS-thread work — on the A13, ~4 ms for the decrypt itself vs ~685 ms for that copy. So the real match-start fix is to stop shipping + decrypting the whole bank on the client mid-countdown.
 
 ## How it was tested
 - 47 passing unit tests — prediction, reconciliation, clock, data layer, integrity.
