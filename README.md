@@ -2,6 +2,13 @@
 
 We took your live app apart on a **real budget Galaxy A13**, built the fixes, and **ran them on that same phone**. Most audits stop at a flamegraph — we shipped working code and let the measurements correct us: our first instinct (make the match-start decrypt native) turned out to fix the wrong 1%, so we dug until we found the real bottleneck. Every number below is reproducible from this repo.
 
+<p align="center">
+  <img src="assets/duel-bot-detection.png" width="270" alt="The authoritative server catches a bot mid-duel and voids its score, on the A13">
+  &nbsp;&nbsp;&nbsp;
+  <img src="assets/decrypt-abc.png" width="270" alt="On-device A/B/C: decrypt on the JS thread vs off the JS thread">
+</p>
+<p align="center"><sub><b>Left:</b> the server catches a bot mid-duel and voids the score — on the real A13. &nbsp;&nbsp; <b>Right:</b> the on-device A/B/C decrypt test that found the bridge, not the decrypt, is the wall.</sub></p>
+
 | Metric | Today | With the fix |
 |---|---|---|
 | GraphQL round-trips / session | 355 | **195  (−45%)** |
