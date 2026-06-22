@@ -1,0 +1,17 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["matiksrealtime"],
+  "ios": {
+    "iosModuleName": "MatiksRealtime"
+  },
+  "android": {
+    "androidNamespace": ["matiksrealtime"],
+    "androidCxxLibName": "MatiksRealtime"
+  },
+  "autolinking": {
+    "MatiksRealtime": {
+      "cpp": "HybridMatiksRealtime"
+    }
+  },
+  "ignorePaths": ["**/node_modules"]
+}
