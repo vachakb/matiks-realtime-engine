@@ -19,7 +19,7 @@ A cross-platform real-time engine, a client data layer, and a server-authoritati
 
 ## What was built
 
-One shared TypeScript core, with a thin shim on each platform. It speaks the existing `{type, channel, data}` WebSocket contract, so the server is unchanged. The native shim is a **Nitro module** (Margelo's framework — a lighter, faster alternative to React Native's built-in TurboModules, on the same New-Architecture JSI layer that replaced the serialized bridge, default since RN 0.74). Matiks' APK already ships Nitro (`libNitroModules` + `NitroMmkv`/`NitroAppState`/…), so this is one more module in a toolchain already in production: codegen'd from a TypeScript spec, calling C++ directly off the JS thread.
+One shared TypeScript core + a thin per-platform shim, speaking the existing `{type, channel, data}` WebSocket. The server is unchanged.
 
 ```
                 shared core  (TypeScript, 47 tests)
@@ -32,15 +32,15 @@ One shared TypeScript core, with a thin shim on each platform. It speaks the exi
    AUTHORITATIVE SERVER MODEL — recomputes correctness · flags bots · voids cheats
 ```
 
-What each piece does, in plain terms:
+- **Data layer** — dedupes in-flight requests, caches slow-changing queries (per-query TTL; live data never cached), batches same-tick calls into one (`BatchHttpLink`-style). → redundant network
+- **Prediction + reconciliation** — answers score instantly, then the server confirms. Bank is local → guesses correct ~always → rollbacks ≈ 0. → laggy answers on slow networks
+- **Monotonic clock** — answer timing from a steady, server-synced clock, never `Date.now()`. → timed-scoring corruption
+- **Off-thread transport** — transport + crypto in the Nitro module (C++/JSI; Worker on web), off the JS thread that draws the UI. → JS-thread jank
+- **Server-authoritative scoring** — server re-checks every answer + flags bot cadence; the client can't grade itself. → forged scores / cheating
 
-- **Data layer — stop repeating network calls.** Dedupes identical in-flight requests, caches slow-changing queries on a per-query timer (live data is never cached), and merges calls fired in the same tick into one request (Apollo `BatchHttpLink`-style). → *redundant network.*
-- **Prediction — answers feel instant.** An answer shows on screen immediately, then the server confirms it. The bank is on the client, so the client already knows the right answer — the guess is essentially always correct and almost never has to be undone. → *laggy answers on slow networks.*
-- **Monotonic clock — fair timing.** Answer time comes from a steady, server-synced clock (over the existing PING_PONG channel), never `Date.now()`, so a clock jump can't corrupt scoring. → *timed-scoring corruption.*
-- **Off the JS thread — no rendering contention.** Transport + crypto run in the Nitro module (C++ via JSI; a Web Worker on web), off the one JS thread that also draws the UI. → *JS-thread jank.*
-- **Server-authoritative scoring — the client can't grade itself.** The server re-checks every answer against its own key and flags inhumanly fast (bot) cadence, voiding the score. → *client-authoritative scoring + cheating.*
+**Native shim** — a Nitro module (Margelo's JSI framework on RN's New Architecture; a faster alternative to TurboModules). Matiks' APK already ships Nitro — one more module in a running toolchain.
 
-One result worth calling out: going native is not automatically the fix. JSI removes serialization, but copying the decrypted bank into JS values is still JS-thread work — on the A13, ~4 ms for the decrypt itself vs ~685 ms for that copy. So the real match-start fix is to stop shipping + decrypting the whole bank on the client mid-countdown.
+**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: ~685 ms vs ~4 ms for the decrypt. The real match-start fix is the data path, not the decrypt.
 
 ## How it was tested
 - 47 passing unit tests — prediction, reconciliation, clock, data layer, integrity.
