@@ -1,18 +1,16 @@
-// MockMatiksServer — the AUTHORITATIVE side of the duel. This is what makes the runtime
-// trustworthy: it holds the answer key, recomputes correctness itself (never trusts the
-// client's claim), scores authoritatively, runs an opponent, and detects bot-like cadence.
+// MockMatiksServer — the authoritative side of the duel, for the demo + tests. It holds the
+// answer key, scores the duel from its own copy, runs an opponent, and demonstrates the one
+// integrity layer a correctness check can't provide:
 //
-// Integrity model (the "leagues you can trust" pillar):
-//   • Server-authoritative scoring — the client's score is whatever THE SERVER computes from
-//     submittedValue vs its own key. A client can only "win" by sending the right number.
-//   • Bot/timing-anomaly detection — a bot that knows every answer (because the bank is on the
-//     client) gives itself away through superhuman cadence. N consecutive sub-human-latency
-//     answers ⇒ flagged ⇒ score voided. The client learns it's flagged via the snapshot, so
-//     its optimistic score visibly rolls back — reconciliation + integrity in one moment.
+//   • Bot / cadence detection — because the question bank is decrypted on the client, a bot
+//     knows every answer and can submit genuinely-correct answers at inhuman speed. Correct-
+//     and-fast passes any correctness check, so the only tell is cadence: N consecutive
+//     sub-human-latency answers => flagged => run voided; the client learns it via the snapshot.
+//     (Robust detection times answers server-side; this demo uses the client-sent timestamp.)
 
 import { MsgpackCodec, type Codec } from '../core/codec.ts';
 import { applyAnswer, initialDuelState, type DuelState, type AnswerInput } from '../core/duel.ts';
-import { MessageType, Channels, type WsFrame, type PingSample } from '../core/types.ts';
+import { MessageType, Channels, type WsFrame } from '../core/types.ts';
 import { makeQuestions } from './questions.ts';
 import type { Loopback } from './loopback.ts';
 
@@ -120,7 +118,7 @@ export class MockMatiksServer {
       }
       this.lastSubmitAt = s.timeOfSubmission;
 
-      // AUTHORITATIVE correctness: server's own key, not the client's word.
+      // Score from the server's own answer key.
       const correctValue = this.answerKey.get(s.questionId);
       if (correctValue !== undefined) {
         const input: AnswerInput = {
@@ -147,7 +145,6 @@ export class MockMatiksServer {
       this.oppIndex++;
       this.oppLastAnswerAt = t;
     }
-    this.emitPing();
     this.broadcast();
   }
 
@@ -170,11 +167,4 @@ export class MockMatiksServer {
     this.link.sendToClient(this.codec.encode(frame));
   }
 
-  private emitPing(): void {
-    // Fabricate a well-formed NTP sample (offset≈0, rtt≈0 over loopback) so ClockSync has data.
-    const t = this.now();
-    const sample: PingSample = { t1: t, t2: t, t3: t, t4: t };
-    const frame: WsFrame = { type: MessageType.PingPong, data: sample };
-    this.link.sendToClient(this.codec.encode(frame));
-  }
 }

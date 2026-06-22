@@ -12,8 +12,8 @@
  *      correction (a rollback) — which, for a math duel, should be near-zero because
  *      answer correctness is deterministic and known on the client.
  *
- * This is what lets Matiks go server-authoritative (closing the bot-cheating hole) WITHOUT
- * adding felt latency. The engine here is generic; the duel reducer lives in `duel.ts`.
+ * The payoff: an answer feels instant on any network without waiting for the round-trip, and
+ * corrections are near-zero in honest play. The engine here is generic; the duel reducer lives in `duel.ts`.
  */
 
 export interface PredictionOptions<S, I> {

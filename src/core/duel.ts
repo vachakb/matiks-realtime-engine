@@ -20,7 +20,7 @@ export interface AnswerInput {
   submittedValue: number;
   /** Known locally because the question was decrypted on the client. */
   correctValue: number;
-  /** Monotonic, server-aligned submit time (see ClockSync) — never Date.now(). */
+  /** Client submit timestamp. */
   timeOfSubmission: number;
 }
 

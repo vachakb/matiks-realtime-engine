@@ -6,9 +6,8 @@
  * over an in-memory Loopback with simulated latency — so we can show, with no real backend:
  *   • Prediction — your answer scores INSTANTLY (before the server round-trip).
  *   • Reconciliation — the authoritative server confirms (or corrects) it.
- *   • Monotonic timing — the duel clock never jumps (no Date.now() fairness bug).
- *   • Integrity — tap "🤖 Bot" and the server detects superhuman cadence, flags it, and VOIDS
- *     the score; the client's optimistic score visibly rolls back. Server-authoritative.
+ *   • Bot detection — tap "🤖 Cheat" and the server flags superhuman answer cadence and voids
+ *     the run; the client learns it via the snapshot. (A correctness check can't catch a fast-correct bot.)
  *   • JS thread stays free — the spinner keeps spinning the whole match (small messages
  *     off-threadable, unlike the big decrypt payload — see the Off-Thread Decrypt screen).
  */
@@ -84,7 +83,7 @@ export default function DuelScreen() {
     return () => { clearInterval(tick); engine.close(); };
   }, [gen]);
 
-  // ---- rAF spinner + monotonic timer (the "JS thread free?" readout) ----
+  // ---- rAF spinner + timer (the "JS thread free?" readout) ----
   useEffect(() => {
     let raf = 0;
     const loop = () => {
@@ -144,7 +143,7 @@ export default function DuelScreen() {
         </View>
         <Text style={styles.timer}>{(elapsed / 1000).toFixed(1)}s</Text>
       </View>
-      <Text style={styles.sub}>engine · prediction + reconciliation + monotonic clock · {LATENCY_MS}ms link</Text>
+      <Text style={styles.sub}>engine · prediction + reconciliation · {LATENCY_MS}ms link</Text>
 
       {/* scoreboard */}
       <View style={styles.board}>

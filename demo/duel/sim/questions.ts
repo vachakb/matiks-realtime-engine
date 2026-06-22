@@ -4,8 +4,8 @@
 // the client knows the correct answers locally — which is exactly why optimistic prediction is
 // near-perfect (reports/duel.ts). We model that here by generating the SAME bank on both the
 // client (to render + predict) and the authoritative server (its answer key to score against),
-// from a gameId-derived seed — no answers travel on the wire, and the server never trusts the
-// client's claim of correctness.
+// from a gameId-derived seed — no answers travel on the wire, and the server scores from its
+// own copy of the bank.
 
 export interface DuelQuestion {
   questionId: string;

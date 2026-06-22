@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { RealtimeEngine, type ServerSnapshot } from '../src/core/engine.ts';
 import { MockTransport } from '../src/core/transport.ts';
 import { MsgpackCodec } from '../src/core/codec.ts';
-import { Channels, type WsFrame, type PingSample } from '../src/core/types.ts';
+import { Channels, type WsFrame } from '../src/core/types.ts';
 
 const tick = () => Promise.resolve(); // lets the inbound-coalescing microtask run
 
@@ -49,17 +49,6 @@ test('reconciles against an authoritative server snapshot and emits corrected st
   assert.equal(e.predicted.score, 0, 'reconciled to authoritative truth');
   assert.equal(e.metrics.prediction.rollbacks, 1);
   assert.equal(emitted, 0, 'listener received the corrected state');
-});
-
-test('ping-pong frames drive the clock (offset recovered, monotonic)', async () => {
-  const mt = new MockTransport();
-  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
-  e.connect();
-  const ping: PingSample = { t1: 0, t2: 1050, t3: 1050, t4: 100 }; // +1000ms offset
-  mt.deliver(MsgpackCodec.encode({ type: 'ping-pong', data: ping }));
-  await tick();
-  assert.equal(e.metrics.clock.offsetMs, 1000);
-  assert.equal(e.metrics.clock.rttMs, 100);
 });
 
 test('malformed inbound bytes are dropped, never crash the engine', async () => {

@@ -51,7 +51,7 @@ test('sim: prediction is synchronous — instant feel, before any round-trip', (
   assert.equal(s.score, 4, 'score updates the moment you answer, not after the server replies');
 });
 
-test('sim: server-authoritative — a client that lies to itself is rolled back', async () => {
+test('sim: reconciliation — an over-optimistic prediction is corrected to the server snapshot', async () => {
   const { engine, server, qs } = setup();
   const wrong = qs[0].answer + 1;
   // Client submits a wrong value but optimistically claims it correct (correctValue = its own value).

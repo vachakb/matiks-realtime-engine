@@ -43,7 +43,7 @@ export interface AnswerSubmission {
   /** "<gameId>_<questionIndex>" */
   questionId: string;
   submittedValue: number;
-  /** Server-aligned, monotonic timestamp (ms). See ClockSync. */
+  /** Client submit timestamp (ms). */
   timeOfSubmission: number;
   userId: string;
   /** Monotonically increasing per-client input sequence number — drives reconciliation. */
@@ -67,10 +67,3 @@ export interface GameSnapshot {
   players: PlayerState[];
 }
 
-/** Ping/pong sample for NTP-style clock sync. t1=client send, t2=server recv, t3=server send, t4=client recv. */
-export interface PingSample {
-  t1: number;
-  t2: number;
-  t3: number;
-  t4: number;
-}

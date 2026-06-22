@@ -1,22 +1,21 @@
 /**
- * RealtimeEngine — the orchestrator. Ties together transport + codec + clock + prediction +
+ * RealtimeEngine — the orchestrator. Ties together transport + codec + prediction +
  * inbound coalescing + an offline outbox, behind a small API that mirrors Matiks' current
  * WebSocket client surface so it's a drop-in swap.
  *
  * What it changes vs. today:
  *   - binary codec by default (msgpack) instead of JSON.stringify/parse
  *   - answer feel is instant via client-side prediction (returns synchronously)
- *   - reconciles against authoritative server snapshots (enables server-authoritative scoring)
- *   - monotonic clock for answer timing (no Date.now())
+ *   - reconciles against authoritative server snapshots
+ *   - surfaces the server's behavioral/cadence verdict (bot detection)
  *   - inbound frames are coalesced into one dispatch per tick (no per-frame flood)
  * What it deliberately keeps (Matiks already does these well): an offline send-queue.
  */
 import { MsgpackCodec, type Codec } from './codec';
-import { ClockSync } from './clock';
 import { Batcher } from './ringbuffer';
 import { PredictionEngine, type PredictionMetrics } from './prediction';
 import { applyAnswer, seqOf, initialDuelState, type DuelState, type AnswerInput } from './duel';
-import { MessageType, Channels, type WsFrame, type PingSample } from './types';
+import { MessageType, Channels, type WsFrame } from './types';
 import type { Transport } from './transport';
 
 /** Authoritative snapshot the server broadcasts on the GAME_EVENT channel. */
@@ -29,7 +28,7 @@ export interface ServerSnapshot {
   /** last input seq the server processed for us — the reconciliation anchor. */
   lastProcessedSeq: number;
   opponent?: { userId: string; score: number; questionIndex: number };
-  /** Server-authoritative integrity verdict (bot/anomaly detection). Absent = clean. */
+  /** Behavioral/cadence verdict from the server (bot detection). Absent = clean. */
   integrity?: { flagged: boolean; reason?: string };
 }
 
@@ -38,7 +37,7 @@ export interface EngineOptions {
   userId: string;
   /** wire codec; defaults to binary (msgpack). Pass JsonCodec to A/B against today's path. */
   codec?: Codec;
-  /** monotonic clock source for timing + clock-sync (defaults to performance.now). */
+  /** clock source for the answer timestamp (defaults to Date.now). */
   monotonic?: () => number;
   /** max inbound frames coalesced before a forced flush (also flushed each microtask). */
   inboundBatch?: number;
@@ -50,7 +49,6 @@ export interface EngineMetrics {
   bytesReceived: number;
   framesReceived: number;
   prediction: PredictionMetrics;
-  clock: { offsetMs: number; rttMs: number; jitterMs: number };
 }
 
 type StateListener = (state: DuelState) => void;
@@ -58,7 +56,7 @@ type StateListener = (state: DuelState) => void;
 export class RealtimeEngine {
   readonly #t: Transport;
   readonly #codec: Codec;
-  readonly #clock: ClockSync;
+  readonly #now: () => number;
   readonly #userId: string;
   readonly #pred: PredictionEngine<DuelState, AnswerInput>;
   readonly #inbound: Batcher<WsFrame>;
@@ -77,8 +75,7 @@ export class RealtimeEngine {
     this.#t = opts.transport;
     this.#codec = opts.codec ?? MsgpackCodec;
     this.#userId = opts.userId;
-    const mono = opts.monotonic ?? (() => performance.now());
-    this.#clock = new ClockSync(mono);
+    this.#now = opts.monotonic ?? (() => Date.now());
     this.#pred = new PredictionEngine<DuelState, AnswerInput>({ initialState: initialDuelState, reduce: applyAnswer, seqOf });
     this.#inbound = new Batcher<WsFrame>(opts.inboundBatch ?? 16, (batch) => { for (const f of batch) this.#handle(f); });
 
@@ -99,15 +96,10 @@ export class RealtimeEngine {
 
   get predicted(): DuelState { return this.#pred.predicted; }
   get opponent(): ServerSnapshot['opponent'] { return this.#opponent; }
-  /** Latest server integrity verdict — `{flagged:true,reason}` when the server caught a bot. */
+  /** Latest server behavioral verdict — `{flagged:true,reason}` when the server caught a bot. */
   get integrity(): ServerSnapshot['integrity'] { return this.#integrity; }
-  get serverTime(): number { return this.#clock.serverNow(); }
   get metrics(): EngineMetrics {
-    return {
-      ...this.#m,
-      prediction: this.#pred.metrics,
-      clock: { offsetMs: this.#clock.offsetMs, rttMs: this.#clock.rttMs, jitterMs: this.#clock.jitterMs },
-    };
+    return { ...this.#m, prediction: this.#pred.metrics };
   }
 
   /**
@@ -120,7 +112,7 @@ export class RealtimeEngine {
       questionId: a.questionId,
       submittedValue: a.submittedValue,
       correctValue: a.correctValue,
-      timeOfSubmission: this.#clock.serverNow(),
+      timeOfSubmission: this.#now(),
     };
     const predicted = this.#pred.submit(input);
     this.#send({
@@ -173,10 +165,6 @@ export class RealtimeEngine {
   }
 
   #handle(frame: WsFrame): void {
-    if (frame.type === MessageType.PingPong) {
-      this.#clock.addSample(frame.data as PingSample);
-      return;
-    }
     if (typeof frame.channel === 'string' && frame.channel.startsWith('GAME_EVENT')) {
       const snap = frame.data as ServerSnapshot | undefined;
       if (snap && snap.self) {
