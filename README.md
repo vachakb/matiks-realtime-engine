@@ -1,19 +1,29 @@
 # Matiks — a real-time duel engine + client data layer
 
-A cross-platform real-time engine and a client data layer, built for Matiks' duel loop and grounded in measurements of the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture).
+A cross-platform engine and client data layer for Matiks' duel loop — built from a teardown of the live app, not guesses. Every number below traces to a capture or an on-device run.
 
-## Issues found
+## How it was investigated
+
+| Probe | Tool | What it showed |
+|---|---|---|
+| Live network | Chrome DevTools + CDP capture | a redundant GraphQL fan-out; no client-side query cache |
+| Thread + frames | Perfetto, on a real Galaxy A13 | JS thread saturated while the GPU sits idle — a compute bottleneck, not graphics |
+| APK teardown | unzip + native-symbol scan | New Architecture in prod — ships Nitro (`libNitroModules`, `NitroMmkv`…) on Fabric + JSI |
+| Security model | browser-console WebSocket MITM | the server re-checks correctness — a forged result is rejected |
+
+## What it found
 
 **Performance**
-- **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst fires when the home screen mounts; no client-side query cache. (Static assets are cached; the GraphQL layer is not.)
-- **One overloaded thread** — in the captured trace the single JS thread is the bottleneck: 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. Not a graphics problem.
+- **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst on home-screen mount; static assets are cached, the GraphQL layer isn't.
+- **One overloaded thread** — in the captured trace, 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. The single JS thread is the wall — not graphics.
 
-**Integrity**
-- **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that; catching it needs behavioral/cadence detection.
+**Integrity — tested, not asserted**
+- *Hypothesis:* the client reports its own score, so a forged "I won" should stick. → **Probed with a WebSocket MITM → the server rejected it.** Claim dropped.
+- *What is real:* the bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that — only cadence/behavioral detection can.
 
 ## What was built
 
-One shared TypeScript core + a thin per-platform shim, speaking the existing `{type, channel, data}` WebSocket. The server is unchanged.
+One shared TypeScript core + a thin per-platform shim, over the existing `{type, channel, data}` WebSocket. Server unchanged. Zero runtime dependencies.
 
 ```
                 shared core  (TypeScript, 40 tests)
@@ -26,21 +36,23 @@ One shared TypeScript core + a thin per-platform shim, speaking the existing `{t
    SERVER-SIDE CHECK — flags superhuman answer cadence (bots)
 ```
 
-- **Data layer** — dedupes in-flight requests, caches slow-changing queries (per-query TTL; live data never cached), batches same-tick calls into one (`BatchHttpLink`-style). → redundant network
-- **Prediction + reconciliation** — answers score on screen instantly, then the server confirms. The bank is local so the guess is right ~always → rollbacks ≈ 0. → laggy answers on slow networks
-- **Off-thread decrypt (native)** — built and measured on a real device: the AES decrypt runs in the Nitro module on a background thread. The measurement *is* the result — it's what found the bridge, not the crypto, to be the real cost (below). The socket transport targets the same swappable `Transport` interface (a native thread; a Worker on web) — written, not yet run end-to-end.
-- **Bot/cadence detection** — the server flags sustained superhuman answer cadence and voids the run. A correctness check can't catch a bot here (the answers are real); behavioral detection can. → bots
+- **Data layer** — in-flight dedup + per-operation TTL cache (live data never cached) + same-tick batching (`BatchHttpLink`-style); TTLs derived from the capture. → redundant network
+- **Prediction + reconciliation** — Gambetta/Valve netcode: the answer scores on screen instantly, the server confirms, a mismatch rolls back. The bank is local, so rollbacks ≈ 0. → instant answers on any network
+- **Bot/cadence detection** — the server flags sustained superhuman answer cadence and voids the run — the only thing that catches a correct-but-superhuman bot. → bots
+- **Off-thread decrypt (native)** — AES decrypt in the Nitro module on a background thread; built + measured on-device, where the measurement became the finding (below). The socket transport targets the same swappable `Transport` interface — written, not yet run end-to-end.
 
-**Native shim** — a Nitro module (Margelo's JSI framework on RN's New Architecture; a faster alternative to TurboModules). Matiks' APK already ships Nitro — one more module in a running toolchain.
+**Core internals** — deterministic duel reducer · pluggable JSON/msgpack codec · inbound-frame coalescing · reconnect + resubscribe. The **40 tests** cover prediction rollback, reconnection + offline queue, dedup/TTL/batching, and the cadence flag.
 
-**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: ~685 ms vs ~4 ms for the decrypt. So the real match-start fix is the data path, not faster crypto. If profiling ever justified going further, the bridge itself is beatable — keep the decrypted bank in native state and hand JS one question at a time, so the cost amortizes across the match instead of spiking in the countdown. An architecture to reach for on evidence, not by default.
+**Native shim** — a Nitro module (Margelo's JSI framework; a faster alternative to TurboModules). The APK teardown shows Matiks already ships Nitro — so this is one more module in a running toolchain.
 
-## How it was tested
-- 40 passing unit tests (`npm test`).
-- Real captured traffic replayed through the data layer.
-- Prediction validated against a simulated link at WiFi/4G/3G-representative latencies (30/90/260 ms one-way).
-- The AES-decrypt Nitro module cross-compiled and run on a real Galaxy A13.
-- A playable on-device demo — a live duel (with a Cheat button the server flags as a bot and voids) plus the off-thread-decrypt A/B/C harness. Its spinner is driven by `requestAnimationFrame` (which runs on the JS thread), so it stalls exactly when the thread is blocked — making JS-thread availability directly visible, not inferred.
+**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: **~685 ms vs ~4 ms** for the decrypt itself. So the match-start lever is the data path, not faster crypto. If profiling ever justified going further: keep the decrypted bank in native state and hand JS one question at a time, so the cost amortizes across the match instead of spiking. An architecture to reach for on evidence, not by default.
+
+## How it holds up
+- **40 passing tests** on a zero-dep core (`npm test`).
+- Real captured traffic replayed through the data layer → the −45% below.
+- Prediction validated against a simulated link at WiFi/4G/3G latencies (30/90/260 ms).
+- The Nitro decrypt cross-compiled and run on a real Galaxy A13.
+- A **playable on-device demo** — a live duel (with a Cheat button the server flags and voids) and the decrypt A/B/C harness. Its spinner runs on the JS thread, so it stalls exactly when the thread blocks: JS-thread availability is visible, not inferred.
 
 ## Results
 
