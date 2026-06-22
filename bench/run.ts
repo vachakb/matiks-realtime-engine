@@ -2,7 +2,7 @@
  * Benchmark: replays Matiks' REAL captured WebSocket frames through the current path (JSON)
  * vs the engine's path (binary msgpack), and models the latency/anti-cheat trade-off.
  *
- * Run: node bench/run.ts [path-to-capture.jsonl]
+ * Run: node bench/run.ts <path-to-capture.jsonl>
  *
  * Everything here is measured from real data + the actual engine code — no invented numbers.
  */
@@ -12,8 +12,12 @@ import { deflateRawSync } from 'node:zlib';
 import { PredictionEngine } from '../src/core/prediction.ts';
 import { applyAnswer, seqOf, initialDuelState, type DuelState, type AnswerInput } from '../src/core/duel.ts';
 
-const DEFAULT_CAPTURE = '/Users/vacha/Documents/math-game/matiks-capture/captures/matiks-capture-2026-06-18T22-24-27-365Z.jsonl';
-const path = process.argv[2] ?? DEFAULT_CAPTURE;
+const path = process.argv[2];
+if (!path) {
+  console.error('Usage: node bench/run.ts <path-to-capture.jsonl>');
+  console.error('Replays real captured WebSocket frames through the engine (wire size, decode CPU, latency, reconciliation).');
+  process.exit(1);
+}
 
 const pct = (xs: number[], p: number): number => {
   if (xs.length === 0) return NaN;
