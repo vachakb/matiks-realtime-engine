@@ -32,6 +32,7 @@ An unsolicited, evidence-based teardown of the live Matiks app — profiled on *
 | `reports/05-architecture-data-layer.html` | Your backend/data model + the data-layer waste, mapped from the wire. |
 | `reports/08-track-b-data-layer-proposal.md` | The cheap data-layer wins, ranked, with before/after targets. |
 | `reports/12-rich-session-findings.md` | Rate-limit budget, the PII fan-out, per-keystroke telemetry, more. |
+| **`reports/13` + `reports/15`** | The `MatiksRealtime` Nitro decrypt module run **on a real A13** (debug + release): off-thread decrypt = 4 ms, but the JSI payload marshaling — not the decrypt — is the ~685 ms wall. The honest depth piece. |
 | `reports/03-gap-backlog.html` | Everything vs the RN docs corpus, ranked (incl. native corrections). |
 | **`reports/09` + `reports/11`** | The 2 stability bugs I hit, with repro + fixes *(back-pocket)*. |
 | `reports/04, 06, 07, 10` | Method & raw evidence: decrypt-timing test, capture playbook, native APK findings, web trace. |
@@ -50,6 +51,7 @@ node tools/scan-capture.ts <capture.jsonl>   # auto-detects bug + waste signatur
 - **6 instruments:** Perfetto (per-thread sched + FrameTimeline), Chrome DevTools traces, `gfxinfo`/`dumpsys`, APK static dissection, a CDP traffic capture, and a JSON-vs-binary microbench.
 - **The freeze is native-specific.** On web/V8 the decrypt is cheap; the ~2.5 s freeze is a **Hermes (no-JIT) + 32-bit** phenomenon, confirmed on-device. The web's dominant cost is different (synchronous `localStorage` + analytics).
 - **I walked back two of my own claims after measuring:** msgpack is only a *modest* ~10% on this traffic (the real size lever is `permessage-deflate`, −58% on game frames), and the 270 ms "felt latency" is *partly hidden today* by optimistic UI — prediction's real value is letting you go **server-authoritative for anti-cheat without adding latency.**
+- **And a third, after *building* it:** I shipped the `MatiksRealtime` Nitro module into a real RN app and ran it on the A13. The off-thread decrypt is real (~4 ms in release) but it does **not** by itself zero the match-start freeze — measuring in-app (debug *and* release) showed the JSI marshaling of the question payload is the true ~685 ms JS-thread cost, and packing it into one bridge crossing didn't help. The native module is a 6.8× win and the instrument that proved this; the **decisive** fix is the data layer (`reports/15`).
 - Native architecture (Hermes, New Arch, Nitro) is **confirmed from the shipped APK**, not inferred.
 
 ---

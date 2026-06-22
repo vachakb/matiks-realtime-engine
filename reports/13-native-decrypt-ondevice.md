@@ -16,8 +16,9 @@ The decrypt that blocks the JS thread for ~2.5 s runs in **single-digit ms** in 
 
 ## Honest caveats
 - Synthetic bank = 27 KB / 75 Qs; Matiks' real bank ~50 KB → expect ~2× (~7–8 ms). Still ms vs seconds.
-- The ~2.5 s freeze is decrypt **+ JSON.parse + React state hydration**; the 3.8 ms is decrypt + a byte-scan stand-in for parse. Not pure apples-to-apples on *parse* — but decrypt is the dominant, provably-offloadable cost, and off-threading zeroes the JS-thread freeze either way.
+- The ~2.5 s freeze is decrypt **+ JSON.parse + React state hydration**; the 3.8 ms is decrypt + a byte-scan stand-in for parse. Not pure apples-to-apples on *parse*.
+- **Important correction — now measured in-app (`reports/15`).** This 3.8 ms is the *raw* decrypt in a standalone binary, with no JS↔native bridge. Once wrapped as the actual Nitro module and run inside a real RN app on the A13, the off-thread decrypt is still ~ms (**4 ms in release**) — but marshaling the question payload across the JSI boundary re-introduces a **~685 ms JS-thread block (release)**. So off-threading the decrypt is a real ~6.8× win, yet it does **not** by itself zero the freeze: the *bridge crossing of the payload* is the residual wall. The decisive fix is the data layer (don't client-decrypt the bank at match start).
 - Apple-Silicon macOS ran the same code in 0.7 ms (correctness + ceiling); 3.8 ms is the real 32-bit on-device number.
 
 ## What this proves
-Correct (FIPS KAT), compiled-for-the-target, run-on-device native code — the `MatiksRealtime` Nitro module's core. Final step to ship: wrap as the Nitro `HybridObject` (async `decryptQuestions(blobs): Promise<Question[]>`) + `nitrogen` build inside the app.
+Correct (FIPS KAT), compiled-for-the-target, run-on-device native code — the `MatiksRealtime` Nitro module's core. **This final step is now done (`reports/15`):** wrapped as the Nitro `HybridObject`, `nitrogen`-built, and run inside a real RN app on the A13 in both debug and release. Headline from that step — the off-thread decrypt is ~4 ms, but the JSI payload marshaling is the real ~685 ms JS-thread cost, so the decisive fix is the data layer, not the native module alone.
