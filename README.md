@@ -1,63 +1,84 @@
-# Matiks — profiled, fixed, and run on a real device
+# Matiks — performance & integrity audit + fix
 
-We took your live app apart on a **real budget Galaxy A13**, built the fixes, and **ran them on that same phone**. Most audits stop at a flamegraph — we shipped working code and let the measurements correct us: our first instinct (make the match-start decrypt native) turned out to fix the wrong 1%, so we dug until we found the real bottleneck. Every number below is reproducible from this repo.
+Audit of the live Matiks app — profiled on a real budget Galaxy A13 with Perfetto thread/frame traces, Chrome DevTools traces, and a CDP network capture — with built and tested fixes for what was found. Every number is reproducible from this repo.
 
-<p align="center">
-  <img src="assets/duel-bot-detection.png" width="270" alt="The authoritative server catches a bot mid-duel and voids its score, on the A13">
-  &nbsp;&nbsp;&nbsp;
-  <img src="assets/decrypt-abc.png" width="270" alt="On-device A/B/C: decrypt on the JS thread vs off the JS thread">
-</p>
-<p align="center"><sub><b>Left:</b> the server catches a bot mid-duel and voids the score — on the real A13. &nbsp;&nbsp; <b>Right:</b> the on-device A/B/C decrypt test that found the bridge, not the decrypt, is the wall.</sub></p>
+## Issues found
+
+**Performance**
+- **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst fires when the home screen mounts; no client-side query cache. (Static assets are cached; the GraphQL layer is not.)
+- **Match-start freeze** — the question bank is fetched 3× per duel, then AES-decrypted + JSON-parsed on the JS thread, inside the start countdown. React Native runs all JS on one thread against a ~16.67 ms/frame budget; Hermes executes AOT bytecode with no JIT, so heavy crypto + parsing is slower there and blocks rendering. Result: an ~8.4 s freeze on the A13.
+- **One overloaded thread** — that single JS thread is the bottleneck: 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. Not a graphics problem.
+
+**Integrity / correctness**
+- **Client-authoritative scoring** — the client reports its own score. The question bank is decrypted client-side, so a bot knows every answer and can forge a perfect one. Leagues and leaderboards are gameable.
+- **Timed scoring uses `Date.now()`** — a wall-clock correction (NTP / background resume) can register an answer at negative elapsed time, corrupting a timed duel.
+
+**Bugs**
+- **Web crash — "Cannot read properties of null (reading 'uattr')"** — an intermittent full-page crash. Root-caused to the WebEngage SDK reading `getForever().uattr` on a null store; a non-critical analytics tracker takes down the whole app. (`reports/17`)
+- Two more reproducible client stability bugs documented in `reports/09` and `reports/11`.
+
+## The fix
+
+One shared TypeScript core, dropped onto each platform through a thin shim. It mirrors the existing `{type, channel, data}` WebSocket contract — the server is unchanged.
+
+```
+                shared core  (TypeScript, 47 tests)
+   codec · monotonic clock-sync · prediction + reconciliation · duel reducer
+         │                      │                         │
+    DATA LAYER             NATIVE shim                WEB shim
+  dedup·cache·batch     Nitro/JSI, C++ thread     WebSocket in a Worker
+   (over Apollo)         (off the JS thread)       (off the main thread)
+
+   AUTHORITATIVE SERVER MODEL — recomputes correctness · flags bots · voids cheats
+```
+
+Each mechanism, and the issue it closes:
+- **Data layer** — `RequestGateway` (in-flight dedup + per-operation TTL cache, default never-cache so live data stays fresh) + `RequestBatcher` (coalesces same-tick queries into one request, like Apollo `BatchHttpLink`). → redundant network.
+- **Prediction + reconciliation** — answers apply optimistically and return synchronously; an authoritative server snapshot rebases state and replays still-unacked inputs. Rollbacks are ≈0 because answer correctness is deterministic (the bank is local). → laggy answers on slow networks; also lets scoring go server-authoritative with no felt latency.
+- **Monotonic clock** — NTP-style sync over the existing PING_PONG channel, anchored to `performance.now()`, never `Date.now()`. → timed-scoring corruption.
+- **Off-thread transport** — JSI/Nitro invokes C++ directly, without the legacy bridge's JSON-serialized message queue, so transport + crypto run off the JS thread. Web uses a Worker. → JS-thread contention.
+- **Authoritative server model** — recomputes correctness from its own answer key and flags superhuman answer cadence, voiding flagged scores. → client-authoritative scoring.
+
+The non-obvious result (and why the native module was built): JSI removes *serialization*, but marshaling the decrypted question payload into JS values is still synchronous JS-thread work. Measured on the A13, the decrypt itself is ~4 ms off-thread while the bridge crossing is ~685 ms — so the real match-start fix is **not** shipping + decrypting the whole bank on the client mid-countdown, rather than simply "make the decrypt native."
+
+## How it was tested
+- 47 passing unit tests — prediction, reconciliation, clock, data layer, integrity.
+- Real captured traffic replayed through the data layer.
+- Network / clock / integrity scenarios across WiFi, 4G, and 3G.
+- Native module cross-compiled and run on a real Galaxy A13.
+- A playable on-device demo — a live duel plus the off-thread-decrypt A/B/C harness. Its spinner is driven by `requestAnimationFrame` (which runs on the JS thread), so it stalls exactly when the thread is blocked — making JS-thread availability directly visible, not inferred.
+
+## Results
 
 | Metric | Today | With the fix |
 |---|---|---|
-| GraphQL round-trips / session | 355 | **195  (−45%)** |
+| GraphQL round-trips / session | 355 | **195 (−45%)** |
 | Felt answer latency on mobile data | ~260 ms | **0 ms** |
 | Match-start decrypt, off the JS thread | 8.4 s freeze | **4 ms** |
 | Bot submitting a perfect score | accepted | **flagged + voided (100%)** |
-| Answer timing after a clock jump | −200 ms (corrupt) | **correct** |
+| Timed answer after a clock jump | −200 ms (corrupt) | **correct** |
 
----
+Felt latency holds at 0 ms on every network, with 0 rollbacks:
 
-## Three problems — what we found, how we fixed it, what it changes for you
+| Network | Round-trip | Naive (wait for server) | With prediction |
+|---|---|---|---|
+| WiFi | 30 ms | ~35 ms | **0 ms** |
+| 4G | 90 ms | ~95 ms | **0 ms** |
+| 3G / mobile data | 260 ms | ~263 ms | **0 ms** |
 
-### 1. The network does the same work over and over
-- **Found** — 184 *identical* GraphQL calls re-fired in one session (~485 KB); a **26–33-call burst** when the home screen mounts; no client-side query cache. *(Measured by replaying your real captured traffic.)*
-- **Fixed** — a data layer: request **dedup + tunable TTL cache + batching**, dropping in over your Apollo client (live data is never cached).
-- **Changes for you** — **−45% round-trips/session.** Faster opens and less data — the win lands hardest on your mobile-data users, and it's millions of fewer calls/day at your scale.
+<p align="center">
+  <img src="assets/duel-bot-detection.png" width="270" alt="Bot caught and score voided mid-duel on the A13">
+  &nbsp;&nbsp;&nbsp;
+  <img src="assets/decrypt-abc.png" width="270" alt="On-device A/B/C: decrypt on the JS thread vs off the JS thread">
+</p>
+<p align="center"><sub><b>Left:</b> a bot caught and its score voided mid-duel — on the real A13. &nbsp;&nbsp; <b>Right:</b> the on-device A/B/C decrypt test that found the bridge, not the decrypt, is the wall.</sub></p>
 
-### 2. The live duel is rough on real phones and networks
-- **Found** — match start ships the bank **3× per duel**, then AES-decrypts + JSON-parses it **on the JS thread inside the start countdown** → an **~8.4 s freeze** on the A13. The JS thread is the whole bottleneck (**97% of frames janky**, GPU at **3.5%**, **7 cores idle**). And every answer waits a full network round-trip — fine on WiFi, painful on mobile data.
-- **Fixed** — off-thread transport + **client prediction + reconciliation** + a **monotonic clock**; plus the real match-start fix: stop client-decrypting the bank mid-countdown. We built the native off-thread module to prove it — and it proved the **JSI bridge (685 ms), not the decrypt (4 ms), is the actual wall.**
-- **Changes for you** — duels start smoothly and **fairly** (nobody starts the timer already frozen), and answers score **instantly on every network**:
-
-  | Network | Round-trip | Naive (wait for server) | With prediction |
-  |---|---|---|---|
-  | WiFi | 30 ms | ~35 ms | **0 ms** |
-  | 4G | 90 ms | ~95 ms | **0 ms** |
-  | 3G / mobile data | 260 ms | ~263 ms | **0 ms** |
-
-  …and a clock correction can't corrupt a timed duel (a real 800 ms answer reads as **−200 ms** under `Date.now()`, correct under our monotonic clock).
-
-### 3. The leaderboard trusts the client
-- **Found** — the client reports its own score; since the bank is decrypted on the client, a bot knows every answer and can forge a perfect one. Your competitive core is gameable.
-- **Fixed** — a **server-authoritative** engine that recomputes correctness from its own key and flags bot/timing cadence, voiding the score.
-- **Changes for you** — **100% of bots flagged, 0 honest players** flagged. Leagues, ratings, and leaderboards become trustworthy — and prediction means going server-authoritative costs **zero** felt latency.
-
----
-
-## How deep we went (the receipts)
-- Profiled on a **real budget Galaxy A13** with six instruments: Perfetto (per-thread + frame timeline), DevTools traces, `gfxinfo`, static APK dissection, a CDP network capture, a codec microbench.
-- Built a **tested engine** — **47 passing tests** — and a real **Nitro native module**, cross-compiled and **run on the device** (that's how we caught the bridge, not the decrypt).
-- Built a **playable on-device demo**: a live duel (instant prediction, a real opponent, a monotonic timer, and a Cheat button the server catches and disqualifies) + the off-thread-decrypt A/B harness.
-- **Bonus** — root-caused the intermittent **"Something went wrong" web crash** to a third-party SDK (WebEngage reading `.uattr` on a null store), with the fix. See `reports/17`.
-
-## Run it
+## Setup
 ```bash
 npm test                                      # 47 tests
-node bench/scenarios.ts                        # the WiFi/4G/3G + clock + integrity numbers
-node bench/replay-launch.ts <capture.jsonl>    # the −45% on your real traffic
-cd demo && npx expo run:android                # the playable duel — built + run on the A13
+node bench/scenarios.ts                        # network / clock / integrity numbers
+node bench/replay-launch.ts <capture.jsonl>    # data-layer before/after on real traffic
+cd demo && npx expo run:android                # the playable demo, built + run on the A13
 ```
 
-*Built by Vacha. Happy to walk through any of it.*
+*Built by Vacha.*
