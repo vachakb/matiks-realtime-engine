@@ -11,7 +11,7 @@ A cross-platform real-time engine, a client data layer, and a server-authoritati
 
 **Integrity / correctness**
 - **Client-authoritative scoring** — the client reports its own score. The question bank is decrypted client-side, so a bot knows every answer and can forge a perfect one. Leagues and leaderboards are gameable.
-- **Timed scoring uses `Date.now()`** — a wall-clock correction (NTP / background resume) can register an answer at negative elapsed time, corrupting a timed duel.
+- **Wall-clock answer timing** — answers are stamped `Date.now() + serverOffset` (skew-corrected, but not monotonic). An NTP step or post-sleep resync can move it mid-duel — a latent fairness risk in a *timed* duel, worth hardening rather than leaving to chance.
 
 **Bugs**
 - **Duel aborts on match** — a freshly matched duel intermittently aborts the instant it should begin. The capture shows every search reached a game server-side with zero server errors — a client-side matchmaking race. (`reports/11`)
@@ -57,7 +57,7 @@ One shared TypeScript core + a thin per-platform shim, speaking the existing `{t
 | Felt answer latency on mobile data | ~260 ms | **0 ms** |
 | Match-start decrypt, off the JS thread | 8.4 s freeze | **4 ms** |
 | Bot submitting a perfect score | accepted | **flagged + voided (100%)** |
-| Timed answer after a clock jump | −200 ms (corrupt) | **correct** |
+| Answer timing across a clock step | can jump backwards | **stays monotonic** |
 
 Felt latency holds at 0 ms on every network, with 0 rollbacks:
 

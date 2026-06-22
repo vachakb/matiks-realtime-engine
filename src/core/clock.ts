@@ -1,11 +1,13 @@
 /**
  * Monotonic, server-aligned clock.
  *
- * Matiks today times answers with `Date.now()` (wall-clock) — which can jump on NTP
- * corrections or background throttling, corrupting `timeOfSubmission` and therefore scoring
- * in a *timed* competitive duel. This replaces it with an NTP-style estimator driven by the
- * existing PING_PONG channel, anchored to a **monotonic** local clock (`performance.now()`),
- * so elapsed time never goes backwards.
+ * Matiks stamps answers with `getCurrentTime() = Date.now() + serverOffset` (confirmed in the
+ * web bundle) — so client↔server skew is already corrected, but the base is still `Date.now()`,
+ * a WALL clock. Wall clocks aren't monotonic: an NTP step or a post-sleep resync moves them, so
+ * intra-duel elapsed time can still go backwards. That's a latent correctness risk in a *timed*
+ * duel (a class of bug, not an observed failure — but one a server can't detect after the fact).
+ * This anchors the same server offset to a **monotonic** local clock (`performance.now()`) over
+ * the existing PING_PONG channel, so elapsed time can never go backwards.
  *
  * NTP sample math (t1=client send, t2=server recv, t3=server send, t4=client recv):
  *   rtt    = (t4 - t1) - (t3 - t2)
