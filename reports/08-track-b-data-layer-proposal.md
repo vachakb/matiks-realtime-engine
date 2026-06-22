@@ -2,7 +2,7 @@
 
 **Goal:** cut cold-start round-trips, kill redundant payloads, and stop re-fetching unchanged data — via **Apollo-client config + a few server changes only**. No native module. High ROI, low risk; ship before/alongside the engine (Track A).
 
-**Baseline (measured — see `05-architecture-data-layer`):** ~37 GraphQL round-trips in 1.4 s at launch · **0** `cache-control` headers · ~900 KB/session duplicate encrypted-question payload · home cluster re-fetched ~15× · analytics ≈ 1:1 with API.
+**Baseline (measured at launch; full numbers in `16-data-layer-measured`):** ~37 GraphQL round-trips in 1.4 s at launch · **0** `cache-control` headers · ~900 KB/session duplicate encrypted-question payload · home cluster re-fetched ~15× · analytics ≈ 1:1 with API.
 
 | # | Change | Where | Effort | Impact |
 |---|---|---|---|---|
