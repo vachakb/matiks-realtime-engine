@@ -1,6 +1,6 @@
 # Matiks — a real-time duel engine + client data layer
 
-A cross-platform engine and client data layer for Matiks' duel loop — built from a teardown of the live app, not guesses. Every number below traces to a capture or an on-device run.
+A cross-platform engine and client data layer for Matiks' duel loop, built from a teardown of the live app. Every number below traces to a capture or an on-device run.
 
 ## How it was investigated
 
@@ -16,10 +16,12 @@ A cross-platform engine and client data layer for Matiks' duel loop — built fr
 **Performance**
 - **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst on home-screen mount; static assets are cached, the GraphQL layer isn't.
 - **One overloaded thread** — in the captured trace, 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. The single JS thread is the wall — not graphics.
+- **Redundant queries (N+1)** — opening the league list fires 4 identical `GetUnifiedContestParticipants` calls differing only by a `sortKey`; one fetch sorted client-side would do.
+- **Stale subscriptions** — after a reconnect the client re-subscribes to `GAME_EVENT` / chat channels for already-ended games.
+- **Headroom for rate limits** — every `/api` response carries `x-ratelimit-limit: 1000`; the launch bursts spend that budget fast, so collapsing them also guards against throttling.
 
-**Integrity — tested, not asserted**
-- *Hypothesis:* the client reports its own score, so a forged "I won" should stick. → **Probed with a WebSocket MITM → the server rejected it.** Claim dropped.
-- *What is real:* the bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that — only cadence/behavioral detection can.
+**Integrity**
+- The bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that — only cadence/behavioral detection can.
 
 ## What was built
 
@@ -39,13 +41,11 @@ One shared TypeScript core + a thin per-platform shim, over the existing `{type,
 - **Data layer** — in-flight dedup + per-operation TTL cache (live data never cached) + same-tick batching (`BatchHttpLink`-style); TTLs derived from the capture. → redundant network
 - **Prediction + reconciliation** — Gambetta/Valve netcode: the answer scores on screen instantly, the server confirms, a mismatch rolls back. The bank is local, so rollbacks ≈ 0. → instant answers on any network
 - **Bot/cadence detection** — the server flags sustained superhuman answer cadence and voids the run — the only thing that catches a correct-but-superhuman bot. → bots
-- **Off-thread decrypt (native)** — AES decrypt in the Nitro module on a background thread; built + measured on-device, where the measurement became the finding (below). The socket transport targets the same swappable `Transport` interface — written, not yet run end-to-end.
+- **Off-thread decrypt (native)** — the AES decrypt runs in a Nitro module on a background thread; built and run on-device. The socket transport targets the same swappable `Transport` interface — written, not yet run end-to-end.
 
 **Core internals** — deterministic duel reducer · pluggable JSON/msgpack codec · inbound-frame coalescing · reconnect + resubscribe. The **40 tests** cover prediction rollback, reconnection + offline queue, dedup/TTL/batching, and the cadence flag.
 
 **Native shim** — a Nitro module (Margelo's JSI framework; a faster alternative to TurboModules). The APK teardown shows Matiks already ships Nitro — so this is one more module in a running toolchain.
-
-**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: **~685 ms vs ~4 ms** for the decrypt itself. So the match-start lever is the data path, not faster crypto. If profiling ever justified going further: keep the decrypted bank in native state and hand JS one question at a time, so the cost amortizes across the match instead of spiking. An architecture to reach for on evidence, not by default.
 
 ## How it holds up
 - **40 passing tests** on a zero-dep core (`npm test`).
@@ -59,6 +59,7 @@ One shared TypeScript core + a thin per-platform shim, over the existing `{type,
 | Metric | Today | With the fix |
 |---|---|---|
 | GraphQL round-trips / session | 355 | **195 (−45%)** |
+| Redundant GraphQL transfer / session | ~485 KB | **near-zero (deduped + cached)** |
 | Felt answer latency on mobile data | ~260 ms | **0 ms** |
 
 Against a simulated link at representative latencies, felt answer latency stays 0 ms (the answer renders locally) and rollbacks stay 0 (the answer bank is local, so the prediction is right):
