@@ -6,6 +6,7 @@ A cross-platform real-time engine and a client data layer, built for Matiks' due
 
 **Performance**
 - **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst fires when the home screen mounts; no client-side query cache. (Static assets are cached; the GraphQL layer is not.)
+- **One overloaded thread** — in the captured trace the single JS thread is the bottleneck: 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. Not a graphics problem.
 
 **Integrity**
 - **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that; catching it needs behavioral/cadence detection.
