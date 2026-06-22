@@ -70,9 +70,11 @@ async function main(): Promise<void> {
   for (const c of calls) sizeOf.set(c.spec, c.bytes);
 
   const netByOp = new Map<string, number>();
+  const netTimes: number[] = []; // timestamps of calls that actually hit the network
   const fetcher: Fetcher = async (spec) => {
     const op = gqlInfo(spec.body)?.op ?? '?';
     netByOp.set(op, (netByOp.get(op) ?? 0) + 1);
+    netTimes.push(clock.t);
     return { status: 200, bytes: sizeOf.get(spec) ?? 0 };
   };
 
@@ -103,6 +105,25 @@ async function main(): Promise<void> {
     .sort((a, b) => b.before - b.after - (a.before - a.after));
   console.log('  Top operations collapsed (before → after):');
   for (const r of saved.slice(0, 12)) console.log(`    ${String(r.before - r.after).padStart(3)} saved   ${r.op}  (${r.before} → ${r.after})`);
+
+  // Batching estimate: group the calls that still hit the network into windows (concurrent
+  // queries → one batched HTTP request). This is the launch-fan-out lever dedup/cache can't touch.
+  const WINDOW = 50, MAXBATCH = 25;
+  const windowedRoundTrips = (times: number[]): number => {
+    const t = [...times].sort((a, b) => a - b);
+    let trips = 0, i = 0;
+    while (i < t.length) {
+      const start = t[i];
+      let n = 0;
+      while (i < t.length && t[i] - start <= WINDOW && n < MAXBATCH) { i++; n++; }
+      trips++;
+    }
+    return trips;
+  };
+  const allTimes = calls.map((c) => c.ts);
+  console.log(`\n  + request batching (${WINDOW}ms window, max ${MAXBATCH}/batch):`);
+  console.log(`    network HTTP round-trips: ${m.networked} calls → ${windowedRoundTrips(netTimes)} batched requests`);
+  console.log(`    (no caching, batching alone: ${calls.length} calls → ${windowedRoundTrips(allTimes)} batched requests)`);
 }
 
 main();
