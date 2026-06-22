@@ -12,10 +12,6 @@ A cross-platform real-time engine and a client data layer, built for Matiks' due
 **Integrity**
 - **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that; catching it needs behavioral/cadence detection.
 
-**Bugs**
-- **Duel aborts on match** — a freshly matched duel intermittently aborts the instant it should begin. The capture shows every search reached a game server-side with zero server errors — a client-side matchmaking race.
-- **Web crash — "Cannot read properties of null (reading 'uattr')"** — an intermittent full-page crash, root-caused to the WebEngage SDK reading `getForever().uattr` on a null store; a non-critical analytics tracker takes down the whole app.
-
 ## What was built
 
 One shared TypeScript core + a thin per-platform shim, speaking the existing `{type, channel, data}` WebSocket. The server is unchanged.
