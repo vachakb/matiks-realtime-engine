@@ -1,13 +1,11 @@
 # Matiks — a real-time duel engine + client data layer
 
-A cross-platform real-time engine and a client data layer, built for Matiks' duel loop. Each piece targets a specific issue measured in the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture).
+A cross-platform real-time engine and a client data layer, built for Matiks' duel loop and grounded in measurements of the live app on a real budget Galaxy A13 (Perfetto thread/frame traces, Chrome DevTools traces, a CDP network capture).
 
 ## Issues found
 
 **Performance**
 - **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst fires when the home screen mounts; no client-side query cache. (Static assets are cached; the GraphQL layer is not.)
-- **Match-start freeze** — the question bank is fetched 3× per duel, then AES-decrypted + JSON-parsed on the JS thread, inside the start countdown. React Native runs all JS on one thread against a ~16.67 ms/frame budget; Hermes executes AOT bytecode with no JIT, so heavy crypto + parsing is slower there and blocks rendering. Result: a ~2.5 s freeze on the A13 (Perfetto).
-- **One overloaded thread** — that single JS thread is the bottleneck: 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. Not a graphics problem.
 
 **Integrity**
 - **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that; catching it needs behavioral/cadence detection.
@@ -29,7 +27,7 @@ One shared TypeScript core + a thin per-platform shim, speaking the existing `{t
 
 - **Data layer** — dedupes in-flight requests, caches slow-changing queries (per-query TTL; live data never cached), batches same-tick calls into one (`BatchHttpLink`-style). → redundant network
 - **Prediction + reconciliation** — answers score on screen instantly, then the server confirms. The bank is local so the guess is right ~always → rollbacks ≈ 0. → laggy answers on slow networks
-- **Off-thread decrypt (native)** — the AES decrypt runs in the Nitro module on a background thread, off the JS thread that draws the UI — built and measured on-device. The socket transport targets the same swappable `Transport` interface (a native thread; a Worker on web) — written, not yet run end-to-end. → JS-thread jank
+- **Off-thread decrypt (native)** — built and measured on a real device: the AES decrypt runs in the Nitro module on a background thread. The measurement *is* the result — it's what found the bridge, not the crypto, to be the real cost (below). The socket transport targets the same swappable `Transport` interface (a native thread; a Worker on web) — written, not yet run end-to-end.
 - **Bot/cadence detection** — the server flags sustained superhuman answer cadence and voids the run. A correctness check can't catch a bot here (the answers are real); behavioral detection can. → bots
 
 **Native shim** — a Nitro module (Margelo's JSI framework on RN's New Architecture; a faster alternative to TurboModules). Matiks' APK already ships Nitro — one more module in a running toolchain.
@@ -49,9 +47,6 @@ One shared TypeScript core + a thin per-platform shim, speaking the existing `{t
 |---|---|---|
 | GraphQL round-trips / session | 355 | **195 (−45%)** |
 | Felt answer latency on mobile data | ~260 ms | **0 ms** |
-| Match-start decrypt (on-device, release) | 4.7 s on the JS thread | **0.69 s off-thread\*** |
-
-<sub>\*Decrypt compute is ~4 ms; the residual ~0.69 s is JSI payload marshaling across the bridge, not the AES — so off-threading is a ~6.8× win but doesn't zero the freeze. The decisive match-start fix is the data layer (don't client-decrypt the bank at match start), per "Native ≠ automatic win" above.</sub>
 
 Against a simulated link at representative latencies, felt answer latency stays 0 ms (the answer renders locally) and rollbacks stay 0 (the answer bank is local, so the prediction is right):
 
