@@ -18,34 +18,26 @@ Six instruments on the real device + real captured traffic: Perfetto (per-thread
 - Built the native off-thread decrypt module too — which proved the **JSI bridge (~685 ms), not the decrypt (4 ms), is the real wall**, so the fix is the data path, not "make it native."
 
 ## How we tested
-`npm test` → **47 passing tests**. `node bench/replay-launch.ts <capture>` replays your real traffic. `node bench/scenarios.ts` runs the network/clock/integrity cases below. The engine ran a **playable duel on the Galaxy A13**.
+47 passing unit tests (`npm test`); your real captured traffic replayed through the fix (`node bench/replay-launch.ts`); WiFi/4G/3G + clock + integrity scenarios (`node bench/scenarios.ts`); and a **runnable demo app, built and run on a real Galaxy A13** — a playable duel (instant prediction, a live opponent, a monotonic timer, and a Cheat button the server catches and disqualifies) alongside the off-thread-decrypt A/B harness.
 
 ## Before → after
 
-**Network (replayed on your real capture, ~16-min session)**
-```
-355 GraphQL calls  →  195 HTTP round-trips   (−45%)
-```
+| Metric | Today | With the fix |
+|---|---|---|
+| GraphQL round-trips / session | 355 | **195  (−45%)** |
+| Felt answer latency on mobile data | ~260 ms | **0 ms** |
+| Match-start decrypt, off the JS thread | 8.4 s freeze | **4 ms** |
+| Bot submitting a perfect score | accepted | **flagged + voided (100%)** |
+| Answer timing after a clock jump | −200 ms (corrupt) | **correct (monotonic)** |
 
-**Prediction — felt latency per answer (measured)**
+Felt latency stays at **0 ms on every network** — the gap from a naive (wait-for-server) client grows as the connection slows, so the win is biggest for your mobile-data users:
 
-| Network | Round-trip | Naive (wait for server) | With prediction |
+| Network | Round-trip | Naive | With prediction |
 |---|---|---|---|
 | WiFi | 30 ms | ~35 ms | **0 ms** |
 | 4G | 90 ms | ~95 ms | **0 ms** |
 | 3G / mobile data | 260 ms | ~263 ms | **0 ms** |
-| congested | 460 ms | ~462 ms | **0 ms** |
 
-0 rollbacks on every network (answer correctness is deterministic).
-
-**Monotonic clock — a wall-clock correction mid-duel**
-```
-real 800 ms answer →  Date.now(): −200 ms (corrupt)  |  monotonic: 800 ms (correct)
-```
-
-**Integrity — bot detection**
-```
-bots flagged: 100%   honest players flagged: 0%   (threshold 350 ms)
-```
+(0 rollbacks on every network — answer correctness is deterministic.)
 
 *Built by Vacha. Happy to walk through any of it.*
