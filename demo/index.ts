@@ -1,3 +1,5 @@
+import './duel/polyfills'; // must run before the engine loads
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';

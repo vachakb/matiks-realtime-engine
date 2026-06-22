@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 
 import { selfTestAES } from './aes';
+import DuelScreen from './DuelScreen';
 import {
   decryptOffThread,
   decryptOffThreadPacked,
@@ -49,7 +50,7 @@ interface PathResult {
   usedNative?: boolean;
 }
 
-export default function App() {
+function DecryptScreen() {
   // ── synthetic bank (generated once) ──
   const bankRef = useRef(generateBank());
   const bank = bankRef.current;
@@ -303,7 +304,34 @@ function ResultCard({
   );
 }
 
+function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.tab, active && styles.tabActive]}>
+      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState<'duel' | 'decrypt'>('duel');
+  return (
+    <View style={styles.app}>
+      <View style={styles.tabBar}>
+        <TabButton label="⚔ Duel" active={tab === 'duel'} onPress={() => setTab('duel')} />
+        <TabButton label="⚙ Off-Thread Decrypt" active={tab === 'decrypt'} onPress={() => setTab('decrypt')} />
+      </View>
+      {tab === 'duel' ? <DuelScreen /> : <DecryptScreen />}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  app: { flex: 1, backgroundColor: '#0b1020' },
+  tabBar: { flexDirection: 'row', paddingTop: 38, backgroundColor: '#060912' },
+  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: '#38bdf8' },
+  tabText: { color: '#64748b', fontSize: 13, fontWeight: '700' },
+  tabTextActive: { color: '#e2e8f0' },
   root: { flex: 1, backgroundColor: '#0b1020' },
   scroll: { padding: 20, paddingTop: 64, paddingBottom: 48 },
 
