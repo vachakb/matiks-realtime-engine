@@ -10,7 +10,7 @@ A cross-platform real-time engine and a client data layer, built for Matiks' due
 - **One overloaded thread** — that single JS thread is the bottleneck: 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. Not a graphics problem.
 
 **Integrity**
-- **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. The server validates correctness (tested — a forged "I got it right" on a wrong answer is rejected), but correct-and-instant is invisible to a correctness check; catching it needs behavioral/cadence detection. *(Confirmed: the bank is client-side and the server re-checks correctness. Not tested: Matiks' current anti-bot measures.)*
+- **A bot can't be caught by correctness alone** — the question bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that; catching it needs behavioral/cadence detection.
 
 **Bugs**
 - **Duel aborts on match** — a freshly matched duel intermittently aborts the instant it should begin. The capture shows every search reached a game server-side with zero server errors — a client-side matchmaking race.
