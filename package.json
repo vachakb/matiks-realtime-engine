@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cross-platform real-time game-sync engine for Matiks — off-thread transport, binary protocol, client-side prediction + server reconciliation, and monotonic clock sync. One shared core, two bodies (Nitro/JSI on native, WASM-in-Worker on web).",
+  "description": "Real-time duel engine for Matiks: a zero-dependency TypeScript core — client-side prediction + server reconciliation, bot/cadence detection, pluggable JSON/msgpack codec — over a swappable Transport interface, plus a measured off-thread AES-decrypt Nitro (JSI) module and a runnable demo.",
   "engines": { "node": ">=23.6" },
   "scripts": {
     "test": "node --test test/*.test.ts",
