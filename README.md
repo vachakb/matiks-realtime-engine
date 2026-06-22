@@ -34,7 +34,7 @@ One shared TypeScript core + a thin per-platform shim, speaking the existing `{t
 
 **Native shim** — a Nitro module (Margelo's JSI framework on RN's New Architecture; a faster alternative to TurboModules). Matiks' APK already ships Nitro — one more module in a running toolchain.
 
-**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: ~685 ms vs ~4 ms for the decrypt. The real match-start fix is the data path, not the decrypt.
+**Native ≠ automatic win** — JSI drops serialization, but copying the bank into JS values is still JS-thread work: ~685 ms vs ~4 ms for the decrypt. So the real match-start fix is the data path, not faster crypto. If profiling ever justified going further, the bridge itself is beatable — keep the decrypted bank in native state and hand JS one question at a time, so the cost amortizes across the match instead of spiking in the countdown. An architecture to reach for on evidence, not by default.
 
 ## How it was tested
 - 40 passing unit tests (`npm test`).
