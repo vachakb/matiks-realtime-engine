@@ -49,3 +49,4 @@ Replayed 355 real GraphQL calls over 956s (MATIKS_QUERY_TTL_MS policy)
 - Two distinct levers, both built: **cache/dedup** removes steady-state repeats; **batching** flattens the cold-launch burst of distinct queries. They compose (cache first, batch the remainder).
 - We only collapse **identical** `op`+`variables` within a TTL, so **intentional polling of changing data is preserved** — the 23% is deliberately conservative.
 - The TTLs are starting points; a team tunes them against their own freshness needs. The mechanism, the tests, and the measurement are the deliverable.
+- **Bigger wire-size lever — `permessage-deflate`.** Independent of dedup/cache: enabling the `permessage-deflate` WebSocket extension cut game frames **−58%** in the capture analysis — a server/socket config change, larger than any client-side codec swap.

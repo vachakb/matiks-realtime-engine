@@ -1,6 +1,7 @@
-// Loopback — an in-memory client↔server link with optional one-way latency, so a duel can run
-// entirely on-device (no real network) while still exercising prediction/reconciliation: the
-// latency is exactly what optimistic prediction hides and reconciliation corrects.
+// Loopback — an in-memory client↔server link with optional one-way latency, used by the DEMO and
+// tests to run the engine against a simulated server (no real backend or opponent) while still
+// exercising prediction/reconciliation: the latency is exactly what prediction hides and
+// reconciliation corrects. (Real duels stay online — this is a test harness, not offline play.)
 //
 // `clientTransport` is handed to the RealtimeEngine (the client). The server side uses
 // `onClientFrame` / `sendToClient`. `schedule` is injectable so tests drive time deterministically.

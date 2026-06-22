@@ -7,7 +7,7 @@ thread**, off the React Native JS thread (`mqt_v_js`) — the thread our Perfett
 
 ## Why this is the highest-leverage change
 The duel never bottlenecked on the GPU (3.5%) — it bottlenecked on one JS thread doing socket
-work + JSON + crypto. Moving the socket (and, as a follow-up, the decode/decrypt) onto a native
+work + JSON + crypto. Moving the socket onto a native
 thread is what frees that thread and puts the idle cores to work.
 
 ## How it's wired
@@ -47,7 +47,3 @@ cd ios && pod install # iOS
 # Android: CMake links IXWebSocket (or libwebsockets) + BoringSSL (NDK)
 ```
 
-## Follow-ups that compound the win
-- Move the **question AES-decrypt** here too (kills the 652 ms match-start freeze entirely).
-- **Certificate pinning** in C++ (BoringSSL) — far stronger than anything possible in JS.
-- Enable **permessage-deflate** at the socket (the bigger wire-size lever than msgpack).
