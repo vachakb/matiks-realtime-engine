@@ -18,7 +18,6 @@ A cross-platform engine and client data layer for Matiks' duel loop, built from 
 - **One overloaded thread** — in the captured trace, 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. The single JS thread is the wall — not graphics.
 - **Redundant queries (N+1)** — opening the league list fires 4 identical `GetUnifiedContestParticipants` calls differing only by a `sortKey`; one fetch sorted client-side would do.
 - **Stale subscriptions** — after a reconnect the client re-subscribes to `GAME_EVENT` / chat channels for already-ended games.
-- **Headroom for rate limits** — every `/api` response carries `x-ratelimit-limit: 1000`; the launch bursts spend that budget fast, so collapsing them also guards against throttling.
 
 **Integrity**
 - The bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that — only cadence/behavioral detection can.
