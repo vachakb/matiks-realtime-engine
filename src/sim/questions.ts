@@ -2,7 +2,7 @@
 //
 // Why seeded: in production Matiks ships the (encrypted) bank and the client decrypts it, so
 // the client knows the correct answers locally — which is exactly why optimistic prediction is
-// near-perfect (reports/duel.ts). We model that here by generating the SAME bank on both the
+// near-perfect. We model that here by generating the SAME bank on both the
 // client (to render + predict) and the authoritative server (its answer key to score against),
 // from a gameId-derived seed — no answers travel on the wire, and the server scores from its
 // own copy of the bank.

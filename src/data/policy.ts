@@ -25,7 +25,7 @@ export class OperationTtlPolicy implements CachePolicy {
   }
 }
 
-// TTLs derived from the real Matiks capture (reports/16): operations re-fetched many times
+// TTLs derived from the real Matiks capture: operations re-fetched many times
 // per session whose data changes on the order of minutes, not seconds. Deliberately EXCLUDES
 // live data — e.g. GetGameByIdV2 (duel state) is absent, so it falls through to 0 = no cache.
 // These are starting points a team would tune against their own freshness requirements.

@@ -1,5 +1,5 @@
 // The client data layer: in-flight dedup + tunable TTL caching for the request fan-out,
-// measured against real Matiks capture traffic (reports/16). Framework-agnostic core;
+// measured against real Matiks capture traffic. Framework-agnostic core;
 // drops in over Apollo as a link or over plain fetch.
 export { RequestGateway } from './gateway.ts';
 export { RequestBatcher } from './batcher.ts';

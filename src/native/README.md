@@ -3,8 +3,8 @@
 > **Status — design, not yet built.** This documents the off-thread **socket transport**
 > (`NativeTransport` + the C++ sketch below), written against the engine's `Transport`
 > interface but **not yet built or run end-to-end**. What *is* built and measured on a real
-> device is the off-thread **AES-decrypt** Nitro module (`demo/modules/react-native-matiks-realtime`,
-> see `reports/15`) — and that work showed the JSI *bridge crossing* of the payload, not the
+> device is the off-thread **AES-decrypt** Nitro module (`demo/modules/react-native-matiks-realtime`)
+> — and that work showed the JSI *bridge crossing* of the payload, not the
 > decrypt itself, is the wall. The code below is the intended shape, not a shipped artifact.
 
 This is the engine's **native body**. The shared core (`../core/*`) is platform-agnostic and
