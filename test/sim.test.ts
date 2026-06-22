@@ -36,7 +36,8 @@ test('sim: makeQuestions is deterministic (client & server agree without shippin
 test('sim: honest play — predicted score matches the authoritative server', async () => {
   const { clock, engine, server, qs } = setup();
   for (let i = 0; i < 5; i++) {
-    engine.submitAnswer({ questionId: qs[i].questionId, submittedValue: qs[i].answer, correctValue: qs[i].answer });
+    const q = qs[i]!;
+    engine.submitAnswer({ questionId: q.questionId, submittedValue: q.answer, correctValue: q.answer });
     clock.t += 1500; // human pace, so the anomaly detector stays quiet
   }
   await flush();
@@ -47,15 +48,17 @@ test('sim: honest play — predicted score matches the authoritative server', as
 
 test('sim: prediction is synchronous — instant feel, before any round-trip', () => {
   const { engine, qs } = setup({ latencyMs: 50 });
-  const s = engine.submitAnswer({ questionId: qs[0].questionId, submittedValue: qs[0].answer, correctValue: qs[0].answer });
+  const q = qs[0]!;
+  const s = engine.submitAnswer({ questionId: q.questionId, submittedValue: q.answer, correctValue: q.answer });
   assert.equal(s.score, 4, 'score updates the moment you answer, not after the server replies');
 });
 
 test('sim: reconciliation — an over-optimistic prediction is corrected to the server snapshot', async () => {
   const { engine, server, qs } = setup();
-  const wrong = qs[0].answer + 1;
+  const q = qs[0]!;
+  const wrong = q.answer + 1;
   // Client submits a wrong value but optimistically claims it correct (correctValue = its own value).
-  const predicted = engine.submitAnswer({ questionId: qs[0].questionId, submittedValue: wrong, correctValue: wrong });
+  const predicted = engine.submitAnswer({ questionId: q.questionId, submittedValue: wrong, correctValue: wrong });
   assert.equal(predicted.score, 4, 'optimistic score inflates locally');
   await flush();
   assert.equal(server.selfState.score, 0, 'server scored it against its OWN key');
@@ -65,7 +68,8 @@ test('sim: reconciliation — an over-optimistic prediction is corrected to the 
 test('sim: integrity — a bot at superhuman cadence is flagged and its score voided', async () => {
   const { clock, engine, server, qs } = setup({ minHumanMs: 350, anomalyStreak: 3 });
   for (let i = 0; i < 4; i++) {
-    engine.submitAnswer({ questionId: qs[i].questionId, submittedValue: qs[i].answer, correctValue: qs[i].answer });
+    const q = qs[i]!;
+    engine.submitAnswer({ questionId: q.questionId, submittedValue: q.answer, correctValue: q.answer });
     clock.t += 50; // 50ms between answers — no human does that
   }
   await flush();
@@ -77,7 +81,8 @@ test('sim: integrity — a bot at superhuman cadence is flagged and its score vo
 test('sim: honest human cadence is NOT flagged', async () => {
   const { clock, engine, qs } = setup({ minHumanMs: 350, anomalyStreak: 3 });
   for (let i = 0; i < 4; i++) {
-    engine.submitAnswer({ questionId: qs[i].questionId, submittedValue: qs[i].answer, correctValue: qs[i].answer });
+    const q = qs[i]!;
+    engine.submitAnswer({ questionId: q.questionId, submittedValue: q.answer, correctValue: q.answer });
     clock.t += 1200; // human pace
   }
   await flush();

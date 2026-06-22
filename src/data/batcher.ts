@@ -54,7 +54,14 @@ export class RequestBatcher {
       this.roundTrips++;
       try {
         const results = await this.batchFetcher(chunk.map((w) => w.spec));
-        chunk.forEach((w, j) => w.resolve(results[j]));
+        chunk.forEach((w, j) => {
+          const r = results[j];
+          if (r === undefined) {
+            w.reject(new Error(`batch fetcher returned ${results.length} results for ${chunk.length} requests`));
+          } else {
+            w.resolve(r);
+          }
+        });
       } catch (err) {
         chunk.forEach((w) => w.reject(err));
       }

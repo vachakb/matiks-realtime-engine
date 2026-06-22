@@ -13,7 +13,7 @@ Second capture session (app **v1.23.103**; 6 duels across BLITZ/PUZZLE/MEMORY, *
 - **Per-keystroke telemetry on the GraphQL gateway:** `SubmitGameQuestionActions` ×62, each carrying full cursor-movement + keystroke-timeline arrays + the **question expression and answer in plaintext**, returning only `true`. Batch at game-end (the daily challenge already does this via one `SubmitChallengeResult`) or move off the gateway to the analytics pipeline.
 - **Stale WS re-subscription:** on reconnect the client re-subscribes to `GAME_EVENT`/`GROUP_CHAT` channels for 6 already-ended games. Prune to the active game.
 - **`GetUnifiedContestParticipants` N+1:** opening the league participant list fired **4 identical queries** differing only by `sortKey` (the 4 rating sub-types). Fetch once, sort client-side.
-- **App v1.23.103 model shift:** this build logs answers via the GraphQL mutation `SubmitGameQuestionActions` + server pushes `GAME_EVENT` over WS — not the earlier build's WS `submitAnswerV2`. The realtime submit path is **version/mode-dependent**; the engine thesis (off-thread transport + prediction + clock) is unaffected, but cite the path per version.
+- **App v1.23.103 model shift:** this build logs answers via the GraphQL mutation `SubmitGameQuestionActions` + server pushes `GAME_EVENT` over WS — not the earlier build's WS `submitAnswerV2`. The realtime submit path is **version/mode-dependent**; the engine thesis (off-thread transport + prediction) is unaffected, but cite the path per version.
 - **`betInfo` null all session** — coin-staking not exercised; the wager/economy flow still needs a staked duel to capture.
 
 ## Latency (statistically solid, n=58)

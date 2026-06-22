@@ -13,5 +13,9 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
-  "include": ["src", "test"]
+  // The native shim (src/native, src/index.native.ts) imports react-native-nitro-modules,
+  // which only resolves inside a React Native app — it is typechecked there, not in this
+  // zero-dependency core. Everything else (core, data, sim, web, tests) is checked here.
+  "include": ["src", "test"],
+  "exclude": ["src/native", "src/index.native.ts"]
 }

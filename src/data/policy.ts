@@ -17,8 +17,9 @@ export class OperationTtlPolicy implements CachePolicy {
 
   ttlMs(spec: RequestSpec): number {
     const info = gqlInfo(spec.body);
-    if (info && Object.prototype.hasOwnProperty.call(this.rules, info.op)) {
-      return this.rules[info.op];
+    if (info) {
+      const ttl = this.rules[info.op];
+      if (ttl !== undefined) return ttl;
     }
     return this.defaultTtlMs;
   }
