@@ -1,13 +1,5 @@
-// RequestGateway — the client data layer. Wraps any Fetcher and adds two safe, measured
-// optimizations over the raw network:
-//
-//   1. In-flight dedup — identical requests issued before the first resolves share ONE
-//      network call. Always behavior-preserving (same response, same moment).
-//   2. TTL cache — responses are reused for `policy.ttlMs(spec)` after they arrive. Opt-in
-//      per operation, so live data stays fresh.
-//
-// Everything is counted so the win is measurable, not asserted. `now` is injectable so the
-// cache is testable without real time.
+// RequestGateway — client data layer over any Fetcher: in-flight dedup (identical concurrent
+// requests share one call) + opt-in per-operation TTL cache. Metrics counted; `now` injectable.
 
 import type { Fetcher, CachePolicy, RequestSpec, ResponseRecord, GatewayMetrics } from './types.ts';
 import { requestKey } from './keys.ts';
@@ -32,8 +24,7 @@ export class RequestGateway {
     bytesServed: 0,
   };
 
-  // Explicit field assignment (no TS parameter properties): Node's strip-only TS loader
-  // can't emit the implicit `this.x = x`, so the whole repo assigns fields by hand.
+  // No TS parameter properties — Node's strip-only loader can't emit them; assign by hand.
   constructor(fetcher: Fetcher, policy: CachePolicy, now: () => number = () => Date.now()) {
     this.fetcher = fetcher;
     this.policy = policy;

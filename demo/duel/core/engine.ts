@@ -1,29 +1,6 @@
-/**
- * RealtimeEngine — the orchestrator. Ties together transport + codec + prediction +
- * inbound coalescing + an offline outbox, behind a small API that mirrors Matiks' current
- * WebSocket client surface so it's a drop-in swap.
- *
- * What it changes vs. today:
- *   - binary codec by default (msgpack) instead of JSON.stringify/parse
- *   - answer feel is instant via client-side prediction (returns synchronously)
- *   - reconciles against authoritative server snapshots
- *   - surfaces the server's behavioral/cadence verdict (bot detection)
- *   - inbound frames are coalesced into one dispatch per tick (no per-frame flood)
- *
- * What it changes for RENDER cost (added after the on-device A13 trace — 91% janky frames,
- * the UI thread re-mounting the whole screen on every update):
- *   - it is a `useSyncExternalStore`-compatible store (`subscribe` + `getSnapshot`) whose
- *     snapshot keeps STABLE per-slice identities, so a score change doesn't re-render the
- *     opponent panel or the choices grid — the RN docs' "subscribe to a slice" fix
- *     (state-management.md), with no React dependency in the core.
- *   - it notifies ONCE per coalesced flush and only when something actually changed.
- *   - it exposes the match `deadline` so the countdown can animate on the native driver
- *     instead of being ticked through React every frame (interactivity-and-gestures.md).
- *   - it emits a duel `phase` ('active'/'ended') so the app can pause non-essential UI-thread
- *     work (e.g. session-replay capture) during the performance-critical match.
- *
- * What it deliberately keeps (Matiks already does these well): an offline send-queue.
- */
+// RealtimeEngine — transport + codec + prediction + inbound coalescing + offline outbox behind a
+// drop-in WebSocket-client API, and a useSyncExternalStore-compatible store (notifies once per
+// coalesced flush, only on real change, with stable per-slice identities). No React in the core.
 import { MsgpackCodec, type Codec } from './codec';
 import { Batcher } from './ringbuffer';
 import { PredictionEngine, type PredictionMetrics } from './prediction';
@@ -35,51 +12,37 @@ import { MessageType, Channels, type WsFrame } from './types';
 import type { Transport } from './transport';
 import type { ExternalStore } from './store';
 
-/** Lifecycle of a duel from the client's point of view. */
 export type DuelPhase = 'idle' | 'active' | 'ended';
 
-/** Absolute match-window timing (engine clock, ms). Lets the UI animate the countdown natively. */
 export interface DuelTiming {
   startedAt: number;
   endsAt: number;
 }
 
-/** The opponent slice, kept as its own object so its identity is stable while it's unchanged. */
 export interface OpponentState {
   userId?: string;
   score: number;
   questionIndex: number;
 }
 
-/** Behavioral/cadence verdict from the server (bot detection). */
 export interface IntegrityState {
   flagged: boolean;
   reason?: string;
 }
 
-/** Authoritative snapshot the server broadcasts on the GAME_EVENT channel. */
+// Authoritative snapshot broadcast on the GAME_EVENT channel.
 export interface ServerSnapshot {
   gameId: string;
-  /** server time (ms) of this snapshot — used for opponent interpolation. */
   t: number;
-  /** authoritative duel state for THIS user (in production, projected from the leaderboard). */
   self: DuelState;
-  /** last input seq the server processed for us — the reconciliation anchor. */
-  lastProcessedSeq: number;
+  lastProcessedSeq: number; // reconciliation anchor
   opponent?: { userId?: string; score: number; questionIndex: number };
-  /** Behavioral/cadence verdict from the server (bot detection). Absent = clean. */
   integrity?: IntegrityState;
-  /** Absolute match window — surfaced so the UI can animate the countdown off the JS thread. */
   timing?: DuelTiming;
-  /** Server says the match is over (time up / completed). Drives `phase: 'ended'`. */
-  finished?: boolean;
+  finished?: boolean; // time up / completed → phase 'ended'
 }
 
-/**
- * An immutable view of everything the UI renders. Each slice keeps a STABLE reference while its
- * value is unchanged, so `useSyncExternalStore(engine.subscribe, () => engine.getSnapshot().X)`
- * re-renders only the components that read the slice that actually changed.
- */
+// Immutable UI view. Each slice keeps a stable reference while unchanged, so slice selectors bail.
 export interface EngineSnapshot {
   readonly self: DuelState;
   readonly opponent?: OpponentState;
@@ -91,11 +54,8 @@ export interface EngineSnapshot {
 export interface EngineOptions {
   transport: Transport;
   userId: string;
-  /** wire codec; defaults to binary (msgpack). Pass JsonCodec to A/B against today's path. */
   codec?: Codec;
-  /** clock source for the answer timestamp (defaults to Date.now). */
   monotonic?: () => number;
-  /** max inbound frames coalesced before a forced flush (also flushed each microtask). */
   inboundBatch?: number;
 }
 
@@ -104,7 +64,6 @@ export interface EngineMetrics {
   framesSent: number;
   bytesReceived: number;
   framesReceived: number;
-  /** Store notifications actually delivered to subscribers — i.e. real re-render triggers. */
   publishes: number;
   prediction: PredictionMetrics;
 }
@@ -157,17 +116,14 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
     this.#codec = opts.codec ?? MsgpackCodec;
     this.#userId = opts.userId;
     this.#now = opts.monotonic ?? (() => Date.now());
-    // Duel-specific clone/equal (instead of structuredClone + JSON.stringify) — the GC fix.
     this.#pred = new PredictionEngine<DuelState, AnswerInput>({
       initialState: initialDuelState, reduce: applyAnswer, seqOf,
       clone: cloneDuelState, equal: duelStateEqual,
     });
     this.#snapshot = { self: initialDuelState, phase: 'idle' };
-    // One #publish() per coalesced batch (not per frame): the docs' "batch N packets into one
-    // JS dispatch per tick" applied to the React commit, not just the decode.
     this.#inbound = new Batcher<WsFrame>(opts.inboundBatch ?? 16, (batch) => {
       for (const f of batch) this.#handle(f);
-      this.#publish();
+      this.#publish(); // one publish per coalesced batch, not per frame
     });
 
     this.#t.onMessage((bytes) => this.#onBytes(bytes));
@@ -191,41 +147,33 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
     this.#publish();
   }
 
-  // ---- store surface (useSyncExternalStore-compatible) ----
-
-  /** Subscribe to ANY change. Returns an unsubscribe fn. Pair with `getSnapshot` + a selector. */
+  // useSyncExternalStore surface.
   subscribe(listener: () => void): () => void {
     this.#subs.add(listener);
     return () => { this.#subs.delete(listener); };
   }
 
-  /** Current immutable view. Stable reference (and stable per-slice references) until something changes. */
   getSnapshot(): EngineSnapshot { return this.#snapshot; }
 
-  /** Duel-phase transitions ('active' → 'ended'). Use to pause non-essential UI-thread work in-match. */
+  // Duel-phase transitions — use to pause non-essential UI-thread work in-match.
   onPhase(cb: PhaseListener): () => void {
     this.#phaseListeners.add(cb);
     return () => { this.#phaseListeners.delete(cb); };
   }
 
-  /** Back-compat convenience: fires with the `self` duel state whenever it changes. */
   onState(cb: StateListener): void {
     this.#subs.add(() => cb(this.#snapshot.self));
   }
 
   get predicted(): DuelState { return this.#pred.predicted; }
   get opponent(): OpponentState | undefined { return this.#opponent; }
-  /** Latest server behavioral verdict — `{flagged:true,reason}` when the server caught a bot. */
   get integrity(): IntegrityState | undefined { return this.#integrity; }
   get phase(): DuelPhase { return this.#phase; }
   get metrics(): EngineMetrics {
     return { ...this.#m, prediction: this.#pred.metrics };
   }
 
-  /**
-   * Submit an answer. Returns the predicted state SYNCHRONOUSLY — the UI updates with zero
-   * felt latency. The authoritative correction (if any) arrives later via reconcile.
-   */
+  // Returns the predicted state synchronously (zero felt latency); the server correction arrives via reconcile.
   submitAnswer(a: { questionId: string; submittedValue: number; correctValue: number }): DuelState {
     const input: AnswerInput = {
       seq: ++this.#seq,
@@ -251,10 +199,8 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
     return predicted;
   }
 
-  // ---- internals ----
-
   #send(frame: WsFrame): void {
-    if (!this.#open) { this.#outbox.push(frame); return; } // offline queue (like Matiks today)
+    if (!this.#open) { this.#outbox.push(frame); return; } // offline queue
     const bytes = this.#codec.encode(frame);
     this.#m.bytesSent += bytes.length;
     this.#m.framesSent++;
@@ -272,12 +218,11 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
     this.#m.framesReceived++;
     let frame: WsFrame;
     try { frame = this.#codec.decode(bytes) as WsFrame; }
-    catch { return; } // malformed frame — drop, never crash the engine
+    catch { return; } // drop malformed frames
     this.#inbound.add(frame);
     this.#scheduleFlush();
   }
 
-  /** Coalesce all frames that arrive within one tick into a single dispatch. */
   #scheduleFlush(): void {
     if (this.#flushScheduled) return;
     this.#flushScheduled = true;
@@ -309,11 +254,8 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
     for (const l of this.#phaseListeners) l(phase);
   }
 
-  /**
-   * Rebuild the snapshot from current state, REUSING the previous reference for any slice that
-   * didn't change (so `Object.is` selectors bail out), and notify subscribers only if anything
-   * changed. This is the whole-tree-re-render fix: one notification, minimal slice churn.
-   */
+  // Rebuild the snapshot, reusing the previous reference for unchanged slices so selectors bail;
+  // notify only if something changed.
   #publish(): void {
     const prev = this.#snapshot;
     const self = duelStateEqual(prev.self, this.#pred.predicted) ? prev.self : this.#pred.predicted;
@@ -326,7 +268,7 @@ export class RealtimeEngine implements ExternalStore<EngineSnapshot> {
       self === prev.self && opponent === prev.opponent && integrity === prev.integrity &&
       timing === prev.timing && phase === prev.phase
     ) {
-      return; // nothing changed — no new snapshot, no notification, no re-render
+      return;
     }
 
     this.#snapshot = { self, opponent, integrity, phase, timing };

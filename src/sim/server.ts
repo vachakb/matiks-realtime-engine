@@ -1,12 +1,6 @@
-// MockMatiksServer — the authoritative side of the duel, for the demo + tests. It holds the
-// answer key, scores the duel from its own copy, runs an opponent, and demonstrates the one
-// integrity layer a correctness check can't provide:
-//
-//   • Bot / cadence detection — because the question bank is decrypted on the client, a bot
-//     knows every answer and can submit genuinely-correct answers at inhuman speed. Correct-
-//     and-fast passes any correctness check, so the only tell is cadence: N consecutive
-//     sub-human-latency answers => flagged => run voided; the client learns it via the snapshot.
-//     (Robust detection times answers server-side; this demo uses the client-sent timestamp.)
+// MockMatiksServer — authoritative side of the duel (demo + tests): holds the answer key, scores,
+// runs an opponent, and flags bots by answer cadence — a client-side-decrypted bank makes a
+// fast-correct bot uncatchable by correctness alone. (Demo times answers via the client timestamp.)
 
 import { MsgpackCodec, type Codec } from '../core/codec.ts';
 import { applyAnswer, initialDuelState, type DuelState, type AnswerInput } from '../core/duel.ts';

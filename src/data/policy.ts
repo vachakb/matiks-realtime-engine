@@ -1,11 +1,10 @@
-// Caching policy. The default is conservative — 0 ms (never cache) — so nothing is cached
-// unless explicitly allowed. Per-operation TTLs are opt-in, which keeps live data (game
-// state, scores) always fresh while collapsing the slow-changing re-polls we measured.
+// Caching policy: default 0 ms (never cache) — opt-in per-operation TTLs only, so live data
+// (game state, scores) stays fresh while slow-changing re-polls get cached.
 
 import type { CachePolicy, RequestSpec } from './types.ts';
 import { gqlInfo } from './keys.ts';
 
-/** TTL by GraphQL operationName; everything else falls back to `defaultTtlMs`. */
+// TTL by GraphQL operationName; everything else falls back to `defaultTtlMs`.
 export class OperationTtlPolicy implements CachePolicy {
   private readonly rules: Readonly<Record<string, number>>;
   private readonly defaultTtlMs: number;
@@ -25,10 +24,8 @@ export class OperationTtlPolicy implements CachePolicy {
   }
 }
 
-// TTLs derived from the real Matiks capture: operations re-fetched many times
-// per session whose data changes on the order of minutes, not seconds. Deliberately EXCLUDES
-// live data — e.g. GetGameByIdV2 (duel state) is absent, so it falls through to 0 = no cache.
-// These are starting points a team would tune against their own freshness requirements.
+// TTLs from the capture (operations re-fetched often, changing on the order of minutes). Live data
+// (e.g. GetGameByIdV2 duel state) is intentionally absent → falls through to 0 = no cache.
 export const MATIKS_QUERY_TTL_MS: Readonly<Record<string, number>> = {
   GetCurrentUser: 30_000,
   GetUserTodayQuest: 60_000,

@@ -1,15 +1,5 @@
-/**
- * A minimal external-store contract — deliberately the exact shape React's `useSyncExternalStore`
- * expects (`subscribe(listener) => unsubscribe` + `getSnapshot()`), but with ZERO React
- * dependency so the core stays framework-agnostic and Node-testable. The native/web shims and
- * the RN app wire it to `useSyncExternalStore`; the tests wire it to a plain function.
- *
- * Why this exists: the duel trace showed the whole screen re-mounting on every state change
- * (Fabric `MountItemDispatcher` / 800ms `traversal` on the UI thread). The RN docs' fix is
- * slice subscriptions — "a component only re-renders if the slice it selected changed"
- * (state-management.md). `select()` is that primitive: it memoizes a derived slice and only
- * notifies when the slice actually changes, so a score update never re-renders the choices grid.
- */
+// useSyncExternalStore-shaped store contract (subscribe + getSnapshot), with zero React dependency
+// so the core stays framework-agnostic and Node-testable.
 
 export interface ExternalStore<T> {
   /** Register a listener; returns an unsubscribe function. */
@@ -18,14 +8,8 @@ export interface ExternalStore<T> {
   getSnapshot(): T;
 }
 
-/**
- * Derive a memoized slice store from a base store. The returned store only notifies its listeners
- * when `selector(base)` changes under `isEqual` (default `Object.is`), and `getSnapshot()` returns
- * a stable reference between changes — both required for a safe `useSyncExternalStore` selector.
- *
- *   const score = select(engine, s => s.self.score);          // primitive slice
- *   const opp   = select(engine, s => s.opponent, shallowEq);  // object slice
- */
+// Derive a memoized slice store: notifies only when selector(base) changes under isEqual
+// (default Object.is), and getSnapshot returns a stable reference between changes.
 export function select<T, U>(
   base: ExternalStore<T>,
   selector: (state: T) => U,

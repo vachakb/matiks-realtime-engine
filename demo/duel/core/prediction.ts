@@ -1,38 +1,17 @@
-/**
- * Client-side prediction + server reconciliation (the Gabriel Gambetta / Valve model).
- *
- * The flow:
- *   1. The player makes an input (an answer). We apply it OPTIMISTICALLY to a local
- *      "predicted" state and show it instantly — zero perceived latency.
- *   2. The input is sent to the server, tagged with a monotonically increasing `seq`.
- *   3. The server is authoritative. When it broadcasts a snapshot, it includes the last
- *      input `seq` it has processed for us.
- *   4. We rebase onto that authoritative snapshot and REPLAY any still-unacked inputs.
- *      If the replayed result differs from what we were showing, that's a visible
- *      correction (a rollback) — which, for a math duel, should be near-zero because
- *      answer correctness is deterministic and known on the client.
- *
- * The payoff: an answer feels instant on any network without waiting for the round-trip, and
- * corrections are near-zero in honest play. The engine here is generic; the duel reducer lives in `duel.ts`.
- */
+// Client-side prediction + server reconciliation (Gambetta/Valve): apply inputs optimistically,
+// rebase onto the authoritative snapshot, replay unacked inputs. Generic; the duel reducer is in duel.ts.
 
 export interface PredictionOptions<S, I> {
   initialState: S;
-  /** Pure reducer — MUST NOT mutate `state`. */
-  reduce: (state: S, input: I) => S;
-  /** Extract the sequence number of an input. */
+  reduce: (state: S, input: I) => S; // must not mutate state
   seqOf: (input: I) => number;
-  /** Deep clone of state before replay (defaults to structuredClone). */
-  clone?: (s: S) => S;
-  /** Equality used to detect a visible correction (defaults to structural JSON compare). */
-  equal?: (a: S, b: S) => boolean;
+  clone?: (s: S) => S;               // defaults to structuredClone
+  equal?: (a: S, b: S) => boolean;   // detects a visible rollback; defaults to JSON compare
 }
 
 export interface ReconcileResult<S> {
   state: S;
-  /** True if the authoritative truth differed from what we were optimistically showing. */
   rolledBack: boolean;
-  /** How many unacked inputs were replayed on top of the snapshot. */
   replayed: number;
 }
 
@@ -64,14 +43,11 @@ export class PredictionEngine<S, I> {
     this.#predicted = opts.initialState;
   }
 
-  /** The optimistic state to render right now. */
   get predicted(): S { return this.#predicted; }
-  /** The last authoritative state from the server. */
   get confirmed(): S { return this.#confirmed; }
   get pendingCount(): number { return this.#pending.length; }
   get metrics(): PredictionMetrics { return { ...this.#stats }; }
 
-  /** Optimistically apply an input and return the new predicted state immediately. */
   submit(input: I): S {
     this.#pending.push(input);
     this.#predicted = this.#reduce(this.#predicted, input);
@@ -79,21 +55,15 @@ export class PredictionEngine<S, I> {
     return this.#predicted;
   }
 
-  /** Apply an authoritative snapshot; rebase + replay unacked inputs. */
   reconcile(authoritative: S, lastProcessedSeq: number): ReconcileResult<S> {
     if (lastProcessedSeq < this.#lastAckSeq) {
-      // Stale / out-of-order snapshot — keep our newer prediction.
-      return { state: this.#predicted, rolledBack: false, replayed: 0 };
+      return { state: this.#predicted, rolledBack: false, replayed: 0 }; // stale / out-of-order
     }
     this.#lastAckSeq = lastProcessedSeq;
     this.#confirmed = authoritative;
     this.#pending = this.#pending.filter((i) => this.#seqOf(i) > lastProcessedSeq);
 
-    // Fast path: with nothing unacked to replay, the authoritative snapshot IS the next state —
-    // so we skip the clone + replay loop entirely. This is the common steady-state case (server
-    // has caught up between answers), and it removes a per-snapshot clone allocation from the hot
-    // path. Safe because state is treated as immutable: `reduce` must not mutate (see options),
-    // and we never mutate `#predicted`/`#confirmed` in place.
+    // Fast path: nothing unacked → adopt the snapshot without clone/replay. Safe: reduce never mutates.
     let next: S;
     if (this.#pending.length === 0) {
       next = authoritative;

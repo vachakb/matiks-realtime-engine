@@ -1,12 +1,5 @@
-/**
- * Bounded ring buffer + frame batcher — the backpressure primitives.
- *
- * The docs' "Key Takeaway" for a JSI socket: never flood the JS thread with one dispatch
- * per packet; coalesce. Matiks today does one `JSON.parse` + one store update per inbound
- * frame on the JS thread. `Batcher` collects rapid frames and flushes them as a single
- * dispatch; `RingBuffer` gives a fixed-memory, O(1) queue with an explicit overflow policy
- * (drop-oldest) so a burst can never grow memory without bound.
- */
+// Backpressure primitives: RingBuffer (fixed-memory O(1) queue, drop-oldest) and Batcher
+// (coalesce rapid inbound frames into one dispatch instead of flooding the JS thread).
 
 export class RingBuffer<T> {
   #buf: Array<T | undefined>;

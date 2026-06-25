@@ -1,15 +1,5 @@
-/**
- * Wire codecs. The engine is codec-agnostic: the transport ships bytes, the codec
- * (de)serializes frames. We provide two:
- *
- *   - JsonCodec   — the baseline (what Matiks ships today: JSON.stringify / JSON.parse).
- *   - MsgpackCodec — a dependency-free MessagePack encoder/decoder (binary).
- *
- * Why this matters (measured on Matiks' real frames): their game-state frames are
- * 100% JSON text and ~57% compressible; on Hermes, JSON.parse is a top JS-thread cost.
- * A binary codec cuts both bytes and decode CPU. The codec lives in the shared core, so
- * the *same* serialization runs on native (Nitro) and web (Worker) — the server is untouched.
- */
+// Wire codecs (the engine is codec-agnostic): JsonCodec (today's baseline) and a dependency-free
+// MsgpackCodec (binary — fewer bytes and cheaper to decode than JSON.parse on Hermes).
 
 export interface Codec {
   readonly name: string;

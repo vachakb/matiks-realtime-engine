@@ -1,7 +1,7 @@
 // Core protocol types — mirrors Matiks' WebSocket contract ({ type, channel?, data? }) verbatim,
 // so the engine is a drop-in replacement and the server is unchanged.
 
-/** Message types on the wire, matching Matiks' production enum (from their bundle). */
+// Message types on the wire (from Matiks' bundle).
 export const MessageType = {
   JoinChannel: 'channel_subscribe',
   LeaveChannel: 'channel_unsubscribe',
@@ -12,16 +12,15 @@ export const MessageType = {
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
-/** A single frame on the WebSocket. `data` is opaque to the transport; the codec (de)serializes it. */
+// A frame on the WebSocket; `data` is opaque to the transport (the codec (de)serializes it).
 export interface WsFrame<T = unknown> {
   type: MessageType | string;
   channel?: string;
   data?: T;
-  /** Client-generated id for reliable delivery / ack correlation. Matiks already uses this today. */
   clientMessageId?: string;
 }
 
-/** Channel-name helpers — namespaced exactly like Matiks' `WEBSOCKET_CHANNELS`. */
+// Channel names, namespaced like Matiks' WEBSOCKET_CHANNELS.
 export const Channels = {
   game: (gameId: string) => `GAME_EVENT_${gameId}_V2`,
   user: (userId: string) => `USER_EVENT_${userId}`,
@@ -29,36 +28,24 @@ export const Channels = {
   onlineUsers: () => 'ONLINE_USERS',
 } as const;
 
-/**
- * An answer submission — the hot path of a Blitz/DMAS duel.
- * NOTE: `timeOfSubmission` is engine clock-time (monotonic-derived), never `Date.now()`.
- */
 export interface AnswerSubmission {
   gameId: string;
-  /** "<gameId>_<questionIndex>" */
-  questionId: string;
+  questionId: string; // "<gameId>_<questionIndex>"
   submittedValue: number;
-  /** Client submit timestamp (ms). */
   timeOfSubmission: number;
   userId: string;
-  /** Monotonically increasing per-client input sequence number — drives reconciliation. */
-  seq: number;
+  seq: number; // monotonic per-client input seq — drives reconciliation
 }
 
-/** Authoritative per-player state the server broadcasts on the GAME_EVENT channel. */
 export interface PlayerState {
   userId: string;
   score: number;
   questionIndex: number;
-  /** The last input seq the server has processed for THIS client (reconciliation anchor). */
-  lastProcessedSeq?: number;
+  lastProcessedSeq?: number; // reconciliation anchor
 }
 
-/** A snapshot of the duel as the server sees it. */
 export interface GameSnapshot {
   gameId: string;
-  /** server time (ms) this snapshot represents — used for opponent interpolation. */
   t: number;
   players: PlayerState[];
 }
-

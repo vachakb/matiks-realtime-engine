@@ -1,9 +1,5 @@
-/**
- * Web transport — proxies the socket to a Web Worker (`socket.worker.ts`), keeping network I/O
- * off the main thread. The app owns Worker construction (bundler-specific) and passes it in:
- *
- *   new WorkerTransport(url, new Worker(new URL('./socket.worker.ts', import.meta.url), { type: 'module' }))
- */
+// Web transport — proxies the socket to a Web Worker (socket.worker.ts), keeping network I/O off
+// the main thread. The app constructs the Worker (bundler-specific) and passes it in.
 import type { Transport } from '../core/transport.ts';
 
 export class WorkerTransport implements Transport {

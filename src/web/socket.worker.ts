@@ -1,12 +1,6 @@
 /// <reference lib="webworker" />
-/**
- * Runs inside a Web Worker — owns the WebSocket OFF the main thread.
- *
- * RN-Web has no JS/UI thread split (the browser main thread is everything), so a Worker is the
- * web equivalent of the native off-thread socket: network I/O (and, as a follow-up, decode +
- * the AES question-decrypt) happen here, and the main thread only receives ready bytes.
- * ArrayBuffers are transferred (zero-copy).
- */
+// Runs inside a Web Worker — owns the WebSocket off the main thread (RN-Web has no JS/UI split, so a
+// Worker is the web equivalent of the native off-thread socket). ArrayBuffers transferred zero-copy.
 declare const self: DedicatedWorkerGlobalScope;
 
 let ws: WebSocket | null = null;

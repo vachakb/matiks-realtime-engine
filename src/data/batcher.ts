@@ -1,13 +1,6 @@
-// RequestBatcher — coalesces GraphQL operations issued in the same tick into ONE batched
-// HTTP request, the way Apollo BatchHttpLink / DataLoader do. This is the fix for the
-// cold-launch fan-out: 26–33 *distinct* queries fired as the dashboard mounts become a
-// handful of round-trips instead of 26–33. (Dedup/cache can't help distinct queries — only
-// batching can.) Requires the GraphQL server to accept an array of operations; Apollo Server
-// allows this by default.
-//
-// We batch per microtask (everything queued before the event loop turns), so it needs no
-// timers and is deterministic to test — queries fired together in one React render batch
-// together. Falls back to one-op batches transparently.
+// RequestBatcher — coalesces GraphQL ops issued in the same microtask into ONE batched request
+// (Apollo BatchHttpLink / DataLoader style), collapsing the cold-launch query fan-out. Requires a
+// server that accepts an array of operations.
 
 import type { RequestSpec, ResponseRecord } from './types.ts';
 

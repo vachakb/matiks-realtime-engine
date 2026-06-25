@@ -1,7 +1,5 @@
-// Request identity. Two requests are "the same" if they'd return the same response:
-// same method + URL (sans cache-busting noise) + same body. For GraphQL POSTs that means
-// the same operationName + variables, so we parse the body to get a stable key regardless
-// of key ordering in the serialized JSON.
+// Request identity: two requests match if they'd return the same response (method + URL minus
+// cache-busting + body). For GraphQL POSTs that's operationName + variables, parsed for a stable key.
 
 import type { RequestSpec } from './types.ts';
 
@@ -10,7 +8,7 @@ export interface GqlInfo {
   variables: unknown;
 }
 
-/** Parse a GraphQL POST body → {op, variables}, or null if it isn't GraphQL. */
+// Parse a GraphQL POST body → {op, variables}, or null if it isn't GraphQL.
 export function gqlInfo(body: string | undefined): GqlInfo | null {
   if (!body) return null;
   try {
@@ -26,7 +24,7 @@ export function gqlInfo(body: string | undefined): GqlInfo | null {
   return null;
 }
 
-/** Deterministic JSON: object keys sorted recursively, so {a,b} and {b,a} hash equal. */
+// Deterministic JSON (keys sorted recursively) so {a,b} and {b,a} hash equal.
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -35,11 +33,10 @@ export function stableStringify(value: unknown): string {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
 }
 
-/** Stable identity key for a request. */
 export function requestKey(spec: RequestSpec): string {
   const gql = gqlInfo(spec.body);
   if (gql) return `gql:${gql.op}:${stableStringify(gql.variables)}`;
-  // Non-GraphQL: method + url (strip a trailing cache-buster like ?_=123 if present).
+  // Non-GraphQL: method + url (strip a trailing cache-buster like ?_=123).
   const url = spec.url.replace(/([?&])_=\d+(&|$)/, (_m, p1, p2) => (p2 ? p1 : ''));
   return `${spec.method.toUpperCase()} ${url}${spec.body ? ' ' + spec.body : ''}`;
 }

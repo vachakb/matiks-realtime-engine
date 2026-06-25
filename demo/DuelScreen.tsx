@@ -1,23 +1,7 @@
-/**
- * Playable duel — Matiks' real mechanism, built to reproduce + fix the EXACT issue the on-device
- * A13 trace showed: a continuous ~60fps render loop that never idles (≈590 doFrames per 10s, every
- * bucket, even when nothing on screen changed). Typing was NOT the culprit there (47 input events
- * in 220s) — the perpetual per-frame render is. So the A/B isolates that:
- *
- *   NAIVE  : a JS-driven countdown ticked every frame via requestAnimationFrame + setState, in one
- *            big component → the WHOLE screen (timer, scoreboard, question panel, input) re-renders
- *            ~60×/sec continuously, pegging the JS thread. This is the live-app pattern.
- *   ENGINE : the countdown animates on the NATIVE driver (UI thread, zero JS per frame); the timer
- *            value, score and opponent are isolated slices; the question panel is memoized → the JS
- *            thread IDLES when nothing changes and only wakes on a real update.
- *
- * Mechanism (faithful to Matiks): timer-based (answer as many as you can before the clock; most
- * correct wins; no answers after time's up), and a TYPED auto-evaluating input (type a number, it
- * auto-submits the instant it equals the answer). Match end is authoritative via engine `phase`.
- *
- * The on-screen "question panel rendered N times" counter shows the win without a trace; "▶ Auto-
- * play" drives a reproducible answer stream for the Perfetto capture.
- */
+// Playable duel A/B reproducing Matiks' mechanism (timer-based; typed auto-evaluating input).
+//   NAIVE : per-frame requestAnimationFrame + setState in one component → whole screen re-renders ~60×/s.
+//   ENGINE: native-driver timer + slice subscriptions + memoized panel → JS idles when nothing changes.
+// The "question panel rendered N times" counter shows the win; "▶ Auto-play" drives a reproducible run.
 
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore,

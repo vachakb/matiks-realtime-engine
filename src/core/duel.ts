@@ -1,26 +1,17 @@
-/**
- * The Blitz/DMAS duel domain model — a deterministic, pure reducer.
- *
- * The key insight that makes prediction trivially accurate for Matiks: the client already
- * has the decrypted question, so it KNOWS the correct answer locally. Correctness is
- * deterministic, so optimistic prediction is essentially always right and reconciliation
- * almost never rolls back. (Scoring constant from the captured protocol: correct × 4.)
- */
+// Blitz/DMAS duel reducer — pure + deterministic. The client has the decrypted question, so it
+// knows the correct answer locally; prediction is essentially always right (rollbacks ≈ 0).
 
 export interface DuelState {
   score: number;
   questionIndex: number;
-  /** questionId -> wasCorrect; also makes re-applying the same answer idempotent. */
-  answered: Record<string, boolean>;
+  answered: Record<string, boolean>; // questionId -> wasCorrect (also makes re-apply idempotent)
 }
 
 export interface AnswerInput {
   seq: number;
   questionId: string;
   submittedValue: number;
-  /** Known locally because the question was decrypted on the client. */
-  correctValue: number;
-  /** Client submit timestamp. */
+  correctValue: number; // known locally — the question was decrypted on the client
   timeOfSubmission: number;
 }
 
@@ -32,10 +23,10 @@ export const initialDuelState: DuelState = Object.freeze({
   answered: {},
 });
 
-/** Pure reducer: apply one answer. Idempotent per questionId. Never mutates `state`. */
+// Pure, idempotent per questionId. Never mutates `state`.
 export function applyAnswer(state: DuelState, input: AnswerInput): DuelState {
   if (Object.prototype.hasOwnProperty.call(state.answered, input.questionId)) {
-    return state; // already answered — ignore duplicates/replays
+    return state; // already answered
   }
   const correct = input.submittedValue === input.correctValue;
   return {
