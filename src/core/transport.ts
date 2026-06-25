@@ -1,12 +1,5 @@
-/**
- * Transport abstraction. The engine only ever speaks bytes; what carries them is pluggable:
- *   - native: a Nitro/JSI WebSocket running on a dedicated C++ thread (off the JS thread)
- *   - web:    a WebSocket living inside a Web Worker (off the main thread)
- *   - tests:  MockTransport (in-memory)
- *
- * Keeping this an interface is what makes the engine unit-testable without a socket and
- * identical across platforms.
- */
+// Transport abstraction — the engine speaks only bytes; the carrier is pluggable (native Nitro
+// socket, web Worker socket, or the in-memory MockTransport for tests).
 export interface Transport {
   connect(): void;
   close(): void;

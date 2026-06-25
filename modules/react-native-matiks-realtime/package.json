@@ -48,13 +48,13 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "*"
+    "react-native-nitro-modules": "^0.35.9"
   },
   "devDependencies": {
-    "nitrogen": "*",
+    "nitrogen": "^0.35.9",
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "*",
+    "react-native-nitro-modules": "^0.35.9",
     "typescript": "^5.5.0"
   }
 }

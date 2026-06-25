@@ -1,10 +1,5 @@
-/**
- * Core protocol types for the Matiks real-time engine.
- *
- * Mirrors Matiks' production WebSocket contract: every frame on the wire is
- * `{ type, channel?, data? }`. We keep that shape verbatim so the engine is a
- * drop-in replacement — the server never has to change.
- */
+// Core protocol types — mirrors Matiks' WebSocket contract ({ type, channel?, data? }) verbatim,
+// so the engine is a drop-in replacement and the server is unchanged.
 
 /** Message types on the wire, matching Matiks' production enum (from their bundle). */
 export const MessageType = {

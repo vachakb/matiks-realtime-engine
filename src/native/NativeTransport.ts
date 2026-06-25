@@ -1,17 +1,14 @@
-/**
- * Native transport — wraps the Nitro Hybrid Object so the SAME RealtimeEngine runs on
- * iOS/Android with the socket living on a dedicated native thread. ArrayBuffer <-> Uint8Array
- * conversions are the only glue; payloads cross JSI zero-copy.
- */
 import { NitroModules } from 'react-native-nitro-modules';
 import type { Transport } from '../core/transport.ts';
-import type { MatiksRealtime } from './MatiksRealtime.nitro.ts';
+import type { MatiksSocket } from './MatiksSocket.nitro.ts';
 
+// Adapts the native WebSocket Hybrid Object to the engine's Transport: the socket lives on a
+// native thread, payloads cross JSI zero-copy. Design-stage (the spec isn't built into a module yet).
 const toArrayBuffer = (u: Uint8Array): ArrayBuffer =>
   u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
 
 export class NativeTransport implements Transport {
-  readonly #m = NitroModules.createHybridObject<MatiksRealtime>('MatiksRealtime');
+  readonly #m = NitroModules.createHybridObject<MatiksSocket>('MatiksSocket');
   readonly #url: string;
   constructor(url: string) { this.#url = url; }
 

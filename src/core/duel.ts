@@ -47,21 +47,12 @@ export function applyAnswer(state: DuelState, input: AnswerInput): DuelState {
 
 export const seqOf = (input: AnswerInput): number => input.seq;
 
-/**
- * Cheap structural clone of DuelState. Used by the prediction engine instead of the generic
- * `structuredClone` default: `answered` is a flat string→boolean map, so a single spread is
- * correct and far cheaper. Removing `structuredClone` from the per-snapshot path is a measured
- * GC win on Hermes (the A13 trace showed the GC daemon at ~12% during the duel-start freeze).
- */
+// Cheap clone for the prediction hot path (avoids structuredClone); answered is a flat map.
 export function cloneDuelState(s: DuelState): DuelState {
   return { score: s.score, questionIndex: s.questionIndex, answered: { ...s.answered } };
 }
 
-/**
- * Cheap value-equality for DuelState. Replaces the prediction engine's default
- * `JSON.stringify(a) === JSON.stringify(b)`, which allocated two throwaway strings on every
- * reconcile. Same verdict (used only to detect a visible rollback), a fraction of the garbage.
- */
+// Cheap value-equality for the prediction hot path (avoids the default double JSON.stringify).
 export function duelStateEqual(a: DuelState, b: DuelState): boolean {
   if (a === b) return true;
   if (a.score !== b.score || a.questionIndex !== b.questionIndex) return false;

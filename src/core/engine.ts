@@ -1,28 +1,8 @@
 /**
- * RealtimeEngine — the orchestrator. Ties together transport + codec + prediction +
- * inbound coalescing + an offline outbox, behind a small API that mirrors Matiks' current
- * WebSocket client surface so it's a drop-in swap.
- *
- * What it changes vs. today:
- *   - binary codec by default (msgpack) instead of JSON.stringify/parse
- *   - answer feel is instant via client-side prediction (returns synchronously)
- *   - reconciles against authoritative server snapshots
- *   - surfaces the server's behavioral/cadence verdict (bot detection)
- *   - inbound frames are coalesced into one dispatch per tick (no per-frame flood)
- *
- * What it changes for RENDER cost (added after the on-device A13 trace — 91% janky frames,
- * the UI thread re-mounting the whole screen on every update):
- *   - it is a `useSyncExternalStore`-compatible store (`subscribe` + `getSnapshot`) whose
- *     snapshot keeps STABLE per-slice identities, so a score change doesn't re-render the
- *     opponent panel or the choices grid — the RN docs' "subscribe to a slice" fix
- *     (state-management.md), with no React dependency in the core.
- *   - it notifies ONCE per coalesced flush and only when something actually changed.
- *   - it exposes the match `deadline` so the countdown can animate on the native driver
- *     instead of being ticked through React every frame (interactivity-and-gestures.md).
- *   - it emits a duel `phase` ('active'/'ended') so the app can pause non-essential UI-thread
- *     work (e.g. session-replay capture) during the performance-critical match.
- *
- * What it deliberately keeps (Matiks already does these well): an offline send-queue.
+ * RealtimeEngine — transport + codec + prediction + inbound coalescing + offline outbox behind a
+ * drop-in WebSocket-client API. Also a `useSyncExternalStore`-compatible store: notifies once per
+ * coalesced flush and only on real change (stable per-slice identities), and exposes the match
+ * deadline and duel phase. No React dependency in the core.
  */
 import { MsgpackCodec, type Codec } from './codec.ts';
 import { Batcher } from './ringbuffer.ts';
