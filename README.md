@@ -1,65 +1,57 @@
 # Matiks — real-time duel engine + on-device performance teardown
 
-A teardown of the live app, plus a runnable engine + demo. Numbers are tagged by source and never mixed:
+A teardown of the live Matiks app on a budget Galaxy A13 (Perfetto + logcat), plus an engine and a
+demo that reproduce and fix what the trace shows. Every number is measured. Two sources, never
+mixed: **[live app]** = the shipped `com.matiks.app`; **[reproduction]** = the A/B demo on the same A13.
 
-- **[their app]** — measured in an on-device Perfetto + logcat trace of `com.matiks.app` on a budget Galaxy A13.
-- **[demo]** — measured in this repo's demo on the same A13 (our engine vs a naive baseline).
+## What's wrong, technically  [live app]
 
-## What their trace shows [their app]
+The duel is **single-thread compute-bound, not graphics-bound — and the hardware isn't the limit.**
 
-The duel is **CPU/JS-bound, not graphics-bound — and the phone is not the limit.**
+- **The app never idles.** A full render pipeline runs ~60×/sec *continuously* — ~590 `doFrame`/10 s in **every** bucket of the 220 s trace, including idle stretches with **0 text changes**. Frames are being produced for nothing.
+- **One JS thread does everything.** 94.6% busy at match start, 40% in play, **91% of frames janky**, GPU ~idle, 7 CPU cores idle. The wall is compute on a single thread, not the GPU.
+- **State changes re-render the whole screen.** At match start: a single **820 ms** Fabric `traversal` + `MountItemDispatcher` churn — the 2–3 s "stuck on starting" freeze.
+- **A session-replay SDK runs on the UI thread.** Microsoft Clarity captures frames for **~4.2 s** of UI-thread time *mid-duel*.
+- **GC churn.** ART GC daemon at **~12%** during the freeze.
+- **It's not the phone.** **55% of CPU sat idle** during the freeze, clocks free. (And typing isn't the load — only **47** input events in 220 s.)
 
-| Measured | Number |
-|---|---|
-| Frames janky (>16.7 ms) in play | **91%** |
-| JS thread busy — match start / in play | **94.6% / 40%** (GPU idle) |
-| Renders ~60 fps **even when idle** | ~590 `doFrame` / 10 s in every bucket; idle buckets = 0 text changes |
-| Match-start freeze | one **904 ms** frame; **820 ms** view `traversal` + Fabric mount churn |
-| Session-replay (Microsoft Clarity) on the UI thread | **~4.2 s** of UI-thread time, mid-duel |
-| ART GC during the freeze | **~12%** |
-| CPU **idle** during the freeze | **55%**, clocks free → not the phone |
-| Input events in 220 s | **47** → typing isn't the load |
+## What was tried → what worked  [reproduction]
 
-*Redundant GraphQL (184 repeat calls/session; 26–33-call home-mount burst) is from an earlier network capture, not re-verified here.*
+Reproduce Matiks' exact mechanism — **timer-based** (most-correct-before-the-clock; no answers after time's up) with a **typed auto-evaluating input** — and A/B two render strategies on the same A13:
 
-## A demo that fixes this class of problem [demo]
+- **Naive** — one component, a per-frame `requestAnimationFrame` + `setState` countdown → the whole screen re-renders ~60×/s.
+- **Engine** — store that notifies only on real change (idle when static), slice subscriptions with stable identities, a native-driver timer → the JS thread idles between updates.
 
-Same mechanism as Matiks — **timer-based** (most-correct-in-time wins; no answers after the clock) with a **typed auto-evaluating input**. A toggle runs two render strategies on identical play:
-
-- **Naive** — one component, per-frame `setState` → the whole screen re-renders continuously.
-- **Engine** — idle-when-static store, slice subscriptions, native-driver timer → the screen idles when nothing changes.
-
-Same A13, same person playing both (scored 56 vs 60):
-
-| | Naive | Engine |
+| Metric | Naive | Engine |
 |---|---|---|
 | Expensive subtree re-renders | 2,869 | **16** |
 | JS-thread CPU | 79.3% | **30.9%** |
 | RenderThread CPU | 55.8% | **42.8%** |
 | Dropped frames (>33 ms) | 396 | **203** |
 
-Measured separately on the A13: an AES decrypt moved off the JS thread = **4.7 s → 0.69 s**.
+**Worked:** taking rendering and animation off the per-frame JS path. The expensive subtree renders once instead of ~2,900 times; the JS thread is freed (79% → 31%).
 
-> This proves the *pattern* and its fix on their hardware. It does **not** prove these are the root causes inside their app.
+**Didn't (and why it matters):**
+- A first pass kept a perpetual Reanimated animation in the "fixed" build, so it never idled — frames got *worse* (694 dropped). The win isn't moving a forever-animation to another thread; it's **not animating when nothing changes**.
+- Reanimated 4 cost **~2× more per frame** than the built-in `Animated` native driver on this 32-bit device → use built-in `Animated` for a simple countdown here.
+- Moving the AES decrypt off the JS thread: **4.7 s → 0.69 s**, but the residual is JSI **bridge marshaling**, not the AES — off-threading helps, it doesn't zero the cost.
 
-## What adopting it needs (their source)
+## Limits
 
-We can't read their code or profile a release build at function level, so we can't, and don't claim to:
-
-- identify *which* element drives their always-on 60 fps render (a JS-ticked timer? a Lottie? a shimmer?);
-- pause Clarity during a duel — the engine exposes an `onPhase('active'|'ended')` hook, but only the app can call into the SDK;
-- ship any of this into the live app.
-
-What the engine offers is drop-in: a `useSyncExternalStore`-shaped store (idle + slices), a match `deadline` for native-driver timing, an off-thread decrypt module, and a server-side cadence flag for bots.
+The reproduction proves the fix *pattern* on the same hardware; it does not prove these are the exact
+root causes inside the shipped app — that needs the source or a profileable build. Pausing Clarity or
+shipping the fixes also needs the app source; the engine exposes an `onPhase('active'|'ended')` hook
+for the app to gate non-essential UI-thread work during a match.
 
 ## The engine
 
-One shared TypeScript core + a thin per-platform shim over the existing `{type, channel, data}` WebSocket. Server unchanged. Zero runtime dependencies.
+A shared TypeScript core + a thin per-platform shim over the existing `{type, channel, data}`
+WebSocket. Server unchanged. Zero runtime dependencies.
 
-- **Store** — notifies only on real change (idle when static); slice subscriptions with stable identities; phase lifecycle
+- **Store** — `useSyncExternalStore`-shaped; notifies only on change (idle when static); slice subscriptions; phase lifecycle
 - **Prediction + reconciliation** — the answer scores instantly; the bank is local, so rollbacks ≈ 0
-- **Native** — AES decrypt off the JS thread (Nitro/JSI), built and run on-device
-- **Data layer** — in-flight dedup + per-operation TTL cache + same-tick batching (over Apollo/`fetch`)
+- **Native** — AES decrypt off the JS thread, a Nitro/JSI module built and measured on-device ([`/modules/react-native-matiks-realtime`](modules/react-native-matiks-realtime))
+- **Data layer** — in-flight dedup + per-operation TTL cache + same-tick batching
 - **Bot/cadence detection** — flags sustained superhuman answer cadence (a correctness check can't catch a fast-correct bot)
 
 **49 tests** on the zero-dependency core.
