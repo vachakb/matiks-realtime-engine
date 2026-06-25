@@ -89,8 +89,18 @@ export class PredictionEngine<S, I> {
     this.#confirmed = authoritative;
     this.#pending = this.#pending.filter((i) => this.#seqOf(i) > lastProcessedSeq);
 
-    let next = this.#clone(authoritative);
-    for (const input of this.#pending) next = this.#reduce(next, input);
+    // Fast path: with nothing unacked to replay, the authoritative snapshot IS the next state —
+    // so we skip the clone + replay loop entirely. This is the common steady-state case (server
+    // has caught up between answers), and it removes a per-snapshot clone allocation from the hot
+    // path. Safe because state is treated as immutable: `reduce` must not mutate (see options),
+    // and we never mutate `#predicted`/`#confirmed` in place.
+    let next: S;
+    if (this.#pending.length === 0) {
+      next = authoritative;
+    } else {
+      next = this.#clone(authoritative);
+      for (const input of this.#pending) next = this.#reduce(next, input);
+    }
 
     const rolledBack = !this.#equal(next, this.#predicted);
     this.#predicted = next;

@@ -1,85 +1,74 @@
-# Matiks — a real-time duel engine + client data layer
+# Matiks — real-time duel engine + on-device performance teardown
 
-A cross-platform engine and client data layer for Matiks' duel loop, built from a teardown of the live app. Every number below traces to a capture or an on-device run.
+A teardown of the live app, plus a runnable engine + demo. Numbers are tagged by source and never mixed:
 
-## How it was investigated
+- **[their app]** — measured in an on-device Perfetto + logcat trace of `com.matiks.app` on a budget Galaxy A13.
+- **[demo]** — measured in this repo's demo on the same A13 (our engine vs a naive baseline).
 
-| Probe | Tool | What it showed |
+## What their trace shows [their app]
+
+The duel is **CPU/JS-bound, not graphics-bound — and the phone is not the limit.**
+
+| Measured | Number |
+|---|---|
+| Frames janky (>16.7 ms) in play | **91%** |
+| JS thread busy — match start / in play | **94.6% / 40%** (GPU idle) |
+| Renders ~60 fps **even when idle** | ~590 `doFrame` / 10 s in every bucket; idle buckets = 0 text changes |
+| Match-start freeze | one **904 ms** frame; **820 ms** view `traversal` + Fabric mount churn |
+| Session-replay (Microsoft Clarity) on the UI thread | **~4.2 s** of UI-thread time, mid-duel |
+| ART GC during the freeze | **~12%** |
+| CPU **idle** during the freeze | **55%**, clocks free → not the phone |
+| Input events in 220 s | **47** → typing isn't the load |
+
+*Redundant GraphQL (184 repeat calls/session; 26–33-call home-mount burst) is from an earlier network capture, not re-verified here.*
+
+## A demo that fixes this class of problem [demo]
+
+Same mechanism as Matiks — **timer-based** (most-correct-in-time wins; no answers after the clock) with a **typed auto-evaluating input**. A toggle runs two render strategies on identical play:
+
+- **Naive** — one component, per-frame `setState` → the whole screen re-renders continuously.
+- **Engine** — idle-when-static store, slice subscriptions, native-driver timer → the screen idles when nothing changes.
+
+Same A13, same person playing both (scored 56 vs 60):
+
+| | Naive | Engine |
 |---|---|---|
-| Live network | Chrome DevTools + CDP capture | a redundant GraphQL fan-out; no client-side query cache |
-| Thread + frames | Perfetto, on a real Galaxy A13 | JS thread saturated while the GPU sits idle — a compute bottleneck, not graphics |
-| APK teardown | unzip + native-symbol scan | New Architecture in prod — ships Nitro (`libNitroModules`, `NitroMmkv`…) on Fabric + JSI |
-| Security model | browser-console WebSocket MITM | the server re-checks correctness — a forged result is rejected |
+| Expensive subtree re-renders | 2,869 | **16** |
+| JS-thread CPU | 79.3% | **30.9%** |
+| RenderThread CPU | 55.8% | **42.8%** |
+| Dropped frames (>33 ms) | 396 | **203** |
 
-## What it found
+Measured separately on the A13: an AES decrypt moved off the JS thread = **4.7 s → 0.69 s**.
 
-**Performance**
-- **Redundant network** — 184 identical GraphQL calls re-fire per session (~485 KB); a 26–33-call burst on home-screen mount; static assets are cached, the GraphQL layer isn't.
-- **One overloaded thread** — in the captured trace, 97% of frames janky while the GPU sits at ~3.5% and 7 CPU cores idle. The single JS thread is the wall — not graphics.
-- **Redundant queries (N+1)** — opening the league list fires 4 identical `GetUnifiedContestParticipants` calls differing only by a `sortKey`; one fetch sorted client-side would do.
-- **Stale subscriptions** — after a reconnect the client re-subscribes to `GAME_EVENT` / chat channels for already-ended games.
+> This proves the *pattern* and its fix on their hardware. It does **not** prove these are the root causes inside their app.
 
-**Integrity**
-- The bank is decrypted client-side, so a script knows every answer and can submit *genuinely correct* answers at inhuman speed. A correctness check can't catch that — only cadence/behavioral detection can.
+## What adopting it needs (their source)
 
-## What was built
+We can't read their code or profile a release build at function level, so we can't, and don't claim to:
 
-One shared TypeScript core + a thin per-platform shim, over the existing `{type, channel, data}` WebSocket. Server unchanged. Zero runtime dependencies.
+- identify *which* element drives their always-on 60 fps render (a JS-ticked timer? a Lottie? a shimmer?);
+- pause Clarity during a duel — the engine exposes an `onPhase('active'|'ended')` hook, but only the app can call into the SDK;
+- ship any of this into the live app.
 
-```
-                shared core  (TypeScript, 40 tests)
-        codec · prediction + reconciliation · duel reducer
-         │                      │                         │
-    DATA LAYER             NATIVE shim                WEB shim
-  dedup·cache·batch     Nitro module (C++/JSI)    WebSocket in a Worker
-   (over Apollo)         (off the JS thread)       (off the main thread)
+What the engine offers is drop-in: a `useSyncExternalStore`-shaped store (idle + slices), a match `deadline` for native-driver timing, an off-thread decrypt module, and a server-side cadence flag for bots.
 
-   SERVER-SIDE CHECK — flags superhuman answer cadence (bots)
-```
+## The engine
 
-- **Data layer** — in-flight dedup + per-operation TTL cache (live data never cached) + same-tick batching (`BatchHttpLink`-style); TTLs derived from the capture. → redundant network
-- **Prediction + reconciliation** — Gambetta/Valve netcode: the answer scores on screen instantly, the server confirms, a mismatch rolls back. The bank is local, so rollbacks ≈ 0. → instant answers on any network
-- **Bot/cadence detection** — the server flags sustained superhuman answer cadence and voids the run — the only thing that catches a correct-but-superhuman bot. → bots
-- **Off-thread decrypt (native)** — the AES decrypt runs in a Nitro module on a background thread; built and run on-device. The socket transport targets the same swappable `Transport` interface — written, not yet run end-to-end.
+One shared TypeScript core + a thin per-platform shim over the existing `{type, channel, data}` WebSocket. Server unchanged. Zero runtime dependencies.
 
-**Core internals** — deterministic duel reducer · pluggable JSON/msgpack codec · inbound-frame coalescing · reconnect + resubscribe. The **40 tests** cover prediction rollback, reconnection + offline queue, dedup/TTL/batching, and the cadence flag.
+- **Store** — notifies only on real change (idle when static); slice subscriptions with stable identities; phase lifecycle
+- **Prediction + reconciliation** — the answer scores instantly; the bank is local, so rollbacks ≈ 0
+- **Native** — AES decrypt off the JS thread (Nitro/JSI), built and run on-device
+- **Data layer** — in-flight dedup + per-operation TTL cache + same-tick batching (over Apollo/`fetch`)
+- **Bot/cadence detection** — flags sustained superhuman answer cadence (a correctness check can't catch a fast-correct bot)
 
-**Native shim** — a Nitro module (Margelo's JSI framework; a faster alternative to TurboModules). The APK teardown shows Matiks already ships Nitro — so this is one more module in a running toolchain.
-
-## How it holds up
-- **40 passing tests** on a zero-dep core (`npm test`).
-- Real captured traffic replayed through the data layer → the −45% below.
-- Prediction validated against a simulated link at WiFi/4G/3G latencies (30/90/260 ms).
-- The Nitro decrypt cross-compiled and run on a real Galaxy A13.
-- A **playable on-device demo** — a live duel (with a Cheat button the server flags and voids) and the decrypt A/B/C harness. Its spinner runs on the JS thread, so it stalls exactly when the thread blocks: JS-thread availability is visible, not inferred.
-
-## Results
-
-| Metric | Today | With the fix |
-|---|---|---|
-| GraphQL round-trips / session | 355 | **195 (−45%)** |
-| Redundant GraphQL transfer / session | ~485 KB | **near-zero (deduped + cached)** |
-| Felt answer latency on mobile data | ~260 ms | **0 ms** |
-
-Against a simulated link at representative latencies, felt answer latency stays 0 ms (the answer renders locally) and rollbacks stay 0 (the answer bank is local, so the prediction is right):
-
-| Network | Simulated RTT | Naive (wait for server) | With prediction |
-|---|---|---|---|
-| WiFi | 30 ms | ~35 ms | **0 ms** |
-| 4G | 90 ms | ~95 ms | **0 ms** |
-| 3G / mobile data | 260 ms | ~263 ms | **0 ms** |
-
-<p align="center">
-  <img src="assets/duel-bot-detection.png" width="270" alt="The engine flags a bot's superhuman cadence mid-duel and voids the run, on the A13">
-  &nbsp;&nbsp;&nbsp;
-  <img src="assets/decrypt-abc.png" width="270" alt="On-device A/B/C: decrypt on the JS thread vs off the JS thread">
-</p>
-<p align="center"><sub><b>Left:</b> the engine catches a bot (superhuman answer cadence) mid-duel and voids the run — on the A13. &nbsp;&nbsp; <b>Right:</b> the on-device A/B/C decrypt test that found the bridge, not the decrypt, is the wall.</sub></p>
+**49 tests** on the zero-dependency core.
 
 ## Setup
+
 ```bash
-npm test                          # 40 passing tests
-cd demo && npx expo run:android   # the playable duel + off-thread-decrypt demo
+npm test                          # 49 passing tests
+cd demo && npx expo run:android   # playable duel A/B (Naive vs Engine) + off-thread-decrypt
 ```
 
 *Built by Vacha.*

@@ -313,11 +313,13 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
 }
 
 export default function App() {
+  // 'naive' = the pre-fix render pattern (rAF+setState whole-screen loop) kept as the A/B baseline
+  // for the on-device before/after trace; 'duel' = the engine pattern (slices + Reanimated).
   const [tab, setTab] = useState<'duel' | 'decrypt'>('duel');
   return (
     <View style={styles.app}>
       <View style={styles.tabBar}>
-        <TabButton label="⚔ Duel" active={tab === 'duel'} onPress={() => setTab('duel')} />
+        <TabButton label="⚔ Duel A/B" active={tab === 'duel'} onPress={() => setTab('duel')} />
         <TabButton label="⚙ Off-Thread Decrypt" active={tab === 'decrypt'} onPress={() => setTab('decrypt')} />
       </View>
       {tab === 'duel' ? <DuelScreen /> : <DecryptScreen />}

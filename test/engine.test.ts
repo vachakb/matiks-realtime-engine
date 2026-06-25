@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RealtimeEngine, type ServerSnapshot } from '../src/core/engine.ts';
+import { RealtimeEngine, type ServerSnapshot, type DuelPhase } from '../src/core/engine.ts';
 import { MockTransport } from '../src/core/transport.ts';
 import { MsgpackCodec } from '../src/core/codec.ts';
 import { Channels, type WsFrame } from '../src/core/types.ts';
+import { select } from '../src/core/store.ts';
 
 const tick = () => Promise.resolve(); // lets the inbound-coalescing microtask run
+
+const gameFrame = (gameId: string, snap: ServerSnapshot) =>
+  MsgpackCodec.encode({ type: 'game_event', channel: Channels.game(gameId), data: snap });
 
 test('submitAnswer returns the predicted state synchronously and emits a submitAnswerV2 frame', () => {
   const mt = new MockTransport();
@@ -73,4 +77,83 @@ test('multiple inbound frames in one tick coalesce into a single processing pass
   await tick();
   assert.equal(e.predicted.score, 4, 'last snapshot wins after coalesced batch');
   assert.equal(e.metrics.framesReceived, 5);
+});
+
+test('store: a burst of inbound frames triggers exactly ONE publish (one re-render), not one per frame', async () => {
+  const mt = new MockTransport();
+  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
+  e.connect();
+  e.joinGame('g1');
+  const before = e.metrics.publishes;
+  for (let i = 0; i < 5; i++) {
+    mt.deliver(gameFrame('g1', { gameId: 'g1', t: i, self: { score: i, questionIndex: i, answered: {} }, lastProcessedSeq: i }));
+  }
+  await tick();
+  assert.equal(e.metrics.publishes - before, 1, '5 coalesced frames → a single store notification');
+  assert.equal(e.predicted.score, 4);
+});
+
+test('store: unchanged slices keep stable identity across publishes (selectors bail out)', async () => {
+  const mt = new MockTransport();
+  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
+  e.connect();
+  e.joinGame('g1');
+
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 1, self: { score: 0, questionIndex: 0, answered: {} }, lastProcessedSeq: 0, opponent: { score: 2, questionIndex: 1 } }));
+  await tick();
+  const a = e.getSnapshot();
+
+  // self changes; opponent is byte-for-byte the same.
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 2, self: { score: 4, questionIndex: 1, answered: { g1_0: true } }, lastProcessedSeq: 0, opponent: { score: 2, questionIndex: 1 } }));
+  await tick();
+  const b = e.getSnapshot();
+
+  assert.notEqual(b, a, 'top-level snapshot identity changed');
+  assert.notEqual(b.self, a.self, 'self changed identity (its consumers re-render)');
+  assert.equal(b.opponent, a.opponent, 'opponent identity reused → its panel does NOT re-render');
+});
+
+test('store: a slice selector fires only when its own slice changes', async () => {
+  const mt = new MockTransport();
+  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
+  e.connect();
+  e.joinGame('g1');
+  const scoreSlice = select(e, (s) => s.self.score);
+  let fires = 0;
+  scoreSlice.subscribe(() => fires++);
+
+  // opponent-only change → score selector must stay quiet
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 1, self: { score: 0, questionIndex: 0, answered: {} }, lastProcessedSeq: 0, opponent: { score: 1, questionIndex: 0 } }));
+  await tick();
+  assert.equal(fires, 0, 'opponent change did not fire the score selector');
+
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 2, self: { score: 8, questionIndex: 1, answered: {} }, lastProcessedSeq: 0 }));
+  await tick();
+  assert.equal(fires, 1, 'score change fired the selector exactly once');
+});
+
+test('phase: idle → active on join → ended on bot flag; onPhase fires once per transition', async () => {
+  const mt = new MockTransport();
+  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
+  const seen: DuelPhase[] = [];
+  e.onPhase((p) => seen.push(p));
+  assert.equal(e.phase, 'idle');
+  e.connect();
+  e.joinGame('g1');
+  assert.equal(e.phase, 'active');
+
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 1, self: { score: 0, questionIndex: 1, answered: {} }, lastProcessedSeq: 1, integrity: { flagged: true, reason: 'superhuman cadence' } }));
+  await tick();
+  assert.equal(e.phase, 'ended');
+  assert.deepEqual(seen, ['active', 'ended'], 'each transition emitted exactly once');
+});
+
+test('store: the match deadline is surfaced for native-driver countdowns', async () => {
+  const mt = new MockTransport();
+  const e = new RealtimeEngine({ transport: mt, userId: 'u1' });
+  e.connect();
+  e.joinGame('g1');
+  mt.deliver(gameFrame('g1', { gameId: 'g1', t: 1, self: { score: 0, questionIndex: 0, answered: {} }, lastProcessedSeq: 0, timing: { startedAt: 1000, endsAt: 31000 } }));
+  await tick();
+  assert.deepEqual(e.getSnapshot().timing, { startedAt: 1000, endsAt: 31000 });
 });

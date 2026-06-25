@@ -25,6 +25,7 @@ export interface ServerOptions {
   opponentIntervalMs?: number; // opponent answers one question this often
   minHumanMs?: number; // answers faster than this gap are "superhuman"
   anomalyStreak?: number; // this many consecutive superhuman answers ⇒ flagged
+  durationMs?: number; // match length; surfaced as an absolute deadline so the UI animates natively
 }
 
 export interface Integrity {
@@ -53,6 +54,7 @@ export class MockMatiksServer {
   private readonly opponentIntervalMs: number;
   private readonly minHumanMs: number;
   private readonly anomalyStreak: number;
+  private readonly durationMs: number;
 
   private self: DuelState = initialDuelState;
   private lastProcessedSeq = -1;
@@ -75,6 +77,7 @@ export class MockMatiksServer {
     this.opponentIntervalMs = opts.opponentIntervalMs ?? 2200;
     this.minHumanMs = opts.minHumanMs ?? 350;
     this.anomalyStreak = opts.anomalyStreak ?? 3;
+    this.durationMs = opts.durationMs ?? 60_000;
     const qs = makeQuestions(opts.gameId, opts.questionCount);
     this.answerKey = new Map(qs.map((q) => [q.questionId, q.answer]));
   }
@@ -103,7 +106,14 @@ export class MockMatiksServer {
     }
   }
 
+  /** The match window is closed (time up or flagged) — authoritative, no scoring after this. */
+  private isOver(): boolean {
+    return this.integrity.flagged || this.now() >= this.started + this.durationMs;
+  }
+
   private handleSubmit(s: ClientSubmit): void {
+    // No answers after time's up (Matiks' rule): ack the seq but never score.
+    if (this.isOver()) { this.lastProcessedSeq = Math.max(this.lastProcessedSeq, s.seq); this.broadcast(); return; }
     // Idempotent: ignore a question already scored, but still ack the seq.
     if (!Object.prototype.hasOwnProperty.call(this.self.answered, s.questionId)) {
       // Bot/timing anomaly: superhuman cadence between answers.
@@ -138,7 +148,8 @@ export class MockMatiksServer {
   /** Advance the opponent and broadcast a snapshot. Call on an interval (or per test tick). */
   tick(): void {
     const t = this.now();
-    if (this.oppIndex < this.questionCount && t - this.oppLastAnswerAt >= this.opponentIntervalMs) {
+    // Opponent stops the instant the clock runs out — no more answers after time's up.
+    if (!this.isOver() && this.oppIndex < this.questionCount && t - this.oppLastAnswerAt >= this.opponentIntervalMs) {
       // Opponent answers correctly, deterministically (wrong on every 7th for realism).
       const correct = this.oppIndex % 7 !== 6;
       if (correct) this.oppScore += 4;
@@ -152,6 +163,11 @@ export class MockMatiksServer {
     // When flagged, the authoritative score is voided — the client will reconcile its optimistic
     // score down to 0, making the rollback (and the catch) visible.
     const self = this.integrity.flagged ? { ...this.self, score: 0 } : this.self;
+    const endsAt = this.started + this.durationMs;
+    // Authoritative match end: flagged, time up, OR both players have answered every question.
+    // (Fixes the premature "you won" that flipped to "you lost" while the opponent kept playing.)
+    const bothDone = this.self.questionIndex >= this.questionCount && this.oppIndex >= this.questionCount;
+    const finished = this.integrity.flagged || this.now() >= endsAt || bothDone;
     const frame: WsFrame = {
       type: MessageType.SubmitAnswerV2, // any non-ping type; routed by channel on the client
       channel: Channels.game(this.gameId),
@@ -162,6 +178,10 @@ export class MockMatiksServer {
         lastProcessedSeq: this.lastProcessedSeq,
         opponent: { userId: this.opponentId, score: this.oppScore, questionIndex: this.oppIndex },
         integrity: this.integrity,
+        // Absolute match window → the client animates the countdown on the UI thread (native
+        // driver / Reanimated) instead of ticking React every frame.
+        timing: { startedAt: this.started, endsAt },
+        finished,
       },
     };
     this.link.sendToClient(this.codec.encode(frame));
